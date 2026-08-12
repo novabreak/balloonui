@@ -117,6 +117,7 @@
     <ClInclude Include="Controls\List\DuiTabPage.h">       <Filter>Controls\List</Filter></ClInclude>
     <ClCompile Include="Controls\List\DuiTabPage.cpp">     <Filter>Controls\List</Filter></ClCompile>
     <ClInclude Include="Controls\List\DuiMenu.h">          <Filter>Controls\List</Filter></ClInclude>
+    <ClInclude Include="Controls\List\DuiMenuPlacement.h"> <Filter>Controls\List</Filter></ClInclude>
     <ClCompile Include="Controls\List\DuiMenu.cpp">        <Filter>Controls\List</Filter></ClCompile>
 
     <!-- ============== Controls / Feedback ============== -->

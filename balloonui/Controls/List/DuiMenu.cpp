@@ -6,6 +6,7 @@
 #include "../../DuiResMgr.h"
 #include "../../DuiPaintAA.h"
 #include "../../ImageEx.h"
+#include "DuiMenuPlacement.h"
 #include <gdiplus.h>
 
 namespace balloonwjui {
@@ -90,7 +91,29 @@ public:
             return;
         }
 
-        SetWindowPos(NULL, screenX, screenY, sz.cx, sz.cy,
+        // 落点修正：菜单窗口左上角原本直接放在传入坐标上，锚点靠近屏幕右 / 下
+        // 边缘时整张菜单会跑到桌面工作区外（CLAUDE.md "UI 约定" 第 3 条）。在这
+        // 里统一处理一次，所有入口（右键菜单 / 菜单栏下拉 / 子菜单）都自动受保护，
+        // 调用方不必也不应各写一份。这一步是幂等的，调用方自己算好的落点不会被挪动。
+        POINT origin;
+        origin.x = screenX;
+        origin.y = screenY;
+        const RECT area = GetMenuPlacementArea(origin);
+        if (parent == nullptr)
+        {
+            // 顶层菜单：默认从锚点向右下展开，放不下就翻向左 / 上。
+            origin = ClampMenuOriginToRect(origin, sz, area);
+        }
+        else
+        {
+            // 子菜单：必须始终贴着父菜单的某一侧，不能按顶层菜单那套翻转，
+            // 否则会盖住父菜单或跑得离对应父项很远。
+            RECT rcParent;
+            parent->GetWindowRect(&rcParent);
+            origin = ClampSubMenuOrigin(rcParent, origin, sz, area);
+        }
+
+        SetWindowPos(NULL, origin.x, origin.y, sz.cx, sz.cy,
                      SWP_NOZORDER);
         ShowWindow(SW_SHOWNORMAL);
         SetForegroundWindow(m_hWnd);
@@ -998,7 +1021,7 @@ SIZE DuiMenu::MeasureSize() const
         return sz;
     }
 
-    // ---- 宽：取最宽一项文字（用默认菜单字体测量），夹在 [kMinTextW, kMaxTextW] ----
+    // ---- 宽：取最宽一项文字（用默认菜单字体测量），限制在 [kMinTextW, kMaxTextW] 之间 ----
     HDC   hdc     = ::GetDC(nullptr);
     HFONT useFont = DuiResMgr::Inst().GetDefaultFont();
     HFONT oldFont = useFont ? (HFONT)::SelectObject(hdc, useFont) : nullptr;

@@ -300,6 +300,7 @@
     <ClInclude Include="Controls\List\DuiTabPage.h" />
     <ClInclude Include="Controls\List\DuiMenu.h" />
     <ClInclude Include="Controls\List\DuiMenuBar.h" />
+    <ClInclude Include="Controls\List\DuiMenuPlacement.h" />
     <!-- Controls / Feedback -->
     <ClInclude Include="Controls\Feedback\DuiPopupHost.h" />
     <ClInclude Include="Controls\Feedback\DuiToolTip.h" />

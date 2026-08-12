@@ -45,6 +45,9 @@ class DuiMenuPopup;
 //   · 子菜单是<u>借用</u>的：caller 持有嵌套 DuiMenu 生命期，必须在整个
 //     TrackPopup 调用期间保活。点子菜单<u>父项</u>不返回它的 id（视为
 //     "打开子菜单"，返 0），只有<u>叶项</u>点击才返非 0 id。
+//   · 落点<u>自动限制在工作区内</u>：popup 定位前统一走 DuiMenuPlacement.h，
+//     顶层菜单右 / 下放不下就翻向左 / 上，子菜单则翻到父菜单另一侧，
+//     故贴着屏幕边缘弹出也不会跑到桌面外。调用方不必自己处理。
 //   · 静态纯 helper（FindAcceleratorChar / FindAcceleratorMatch /
 //     KeyboardNavNext）方便不依赖 HWND 单测。
 //   · 不可拷贝 —— 每个可见 popup 一个 DuiMenu 实例。
@@ -117,15 +120,20 @@ public:
     // ---- 运行时 ----
 
     // 计算菜单弹出后的客户区像素尺寸（与内部 popup 渲染同口径：宽 = 图标列 +
-    // 文字左右内边距 + 最宽项文字（夹在内部上下限）+ 子菜单箭头列；高 = 各行
+    // 文字左右内边距 + 最宽项文字（限制在内部上下限之间）+ 子菜单箭头列；高 = 各行
     // 高度之和，分隔条行更矮）。只读、不创建窗口。
-    //   用途：调用方在 TrackPopup <u>之前</u>据此把菜单锚定到按钮上方 / 左侧 ——
-    //         内部 popup 把左上角放在传入坐标且<u>不</u>自动翻转，故需先知道
-    //         高度才能"向上弹"。空菜单返回 {0,0}。
+    //   用途：调用方在 TrackPopup <u>之前</u>据此主动把菜单锚定到按钮上方 /
+    //         左侧（"向上弹"这类布局需求要先知道高度才算得出落点）。
+    //         <u>防越界不需要调用方操心</u> —— 内部 popup 弹出前会自己把落点
+    //         限制在工作区内（见 DuiMenuPlacement.h）。空菜单返回 {0,0}。
     SIZE    MeasureSize() const;
 
     // 在屏幕坐标 (screenX, screenY) 弹菜单。<u>同步阻塞</u>到用户点项 /
     // 失焦 / ESC。
+    //   screenX / screenY：期望的菜单左上角（屏幕坐标）。弹出前会自动限制到
+    //         锚点所在显示器的工作区：右边放不下翻向左、下边放不下翻向上，
+    //         所以贴着屏幕边缘右键也能看见整张菜单（见 DuiMenuPlacement.h）。
+    //         重复处理不改变结果，调用方自己算好的落点不会被再挪动。
     //   ownerHwnd：所有者窗口 HWND（菜单关掉后焦点回这里）。
     //   返回：被点项的 id；0 = dismissed without selection。
     UINT    TrackPopup(int screenX, int screenY, HWND ownerHwnd);
