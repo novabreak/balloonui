@@ -87,7 +87,7 @@ const PageEntry* GetListPages(int& outCount);
 const PageEntry* GetFeedbackPages(int& outCount);
 // 媒体。动图、富文本内嵌图片、异步图片加载。
 const PageEntry* GetMediaPages(int& outCount);
-// 窗口与宿主。滚动视图、框架窗口、九宫格背景、寄宿真窗口的控件。
+// 窗口与宿主。滚动视图、框架窗口、九宫格背景。
 const PageEntry* GetWindowPages(int& outCount);
 // 引擎。主题、高 DPI、动画与缓动、运行期跟踪。
 const PageEntry* GetEnginePages(int& outCount);

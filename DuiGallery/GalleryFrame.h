@@ -69,6 +69,11 @@ private:
     //   返回：工具条容器，所有权交给调用方。
     std::unique_ptr<balloonwjui::DuiControl> BuildToolBar();
 
+    // 按当前客户区尺寸把整棵控件树重新排列一次，并请求重绘。
+    // 控件树的结构发生变化（新增或删除子控件）之后必须调用它 —— 添加子控件
+    // 本身不会触发排版，新加的控件会停在零矩形上什么都画不出来。
+    void    RelayoutRoot();
+
     // 把右侧内容区换成指定页面。
     //   pageId：页面标识，即 PageEntry::idName。找不到时本函数不做任何事。
     void    SwitchToPage(LPCTSTR pageId);

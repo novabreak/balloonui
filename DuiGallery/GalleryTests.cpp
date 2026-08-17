@@ -290,6 +290,12 @@ Result Test_DocCaptureHiddenFromNav()
 // Build_* 忘了往页面里加东西、或者构建过程中提前返回，都会在这里暴露。
 Result Test_EveryPageBuilds()
 {
+    // 一个什么都没加的空页面只报告自身内边距那点高度。拿它当基线，凡是
+    // 报告高度不超过基线的页面就是没往里放任何东西。这里不数子控件个数，
+    // 因为 DuiControl 没有公开子控件个数，而构建函数返回的是基类指针。
+    std::unique_ptr<GalleryPageBox> emptyPage = NewPage();
+    const int emptyHeight = (int)emptyPage->GetDesiredSize().cy;
+
     int groupCount = 0;
     const PageGroup* groups = GetPageGroups(groupCount);
     for (int g = 0; g < groupCount; ++g)
@@ -308,7 +314,7 @@ Result Test_EveryPageBuilds()
                 d.Format(_T("page '%s' returned a null root"), page.idName);
                 return Fail(_T("EveryPageBuilds"), d);
             }
-            if (root->GetChildCount() <= 0)
+            if ((int)root->GetDesiredSize().cy <= emptyHeight)
             {
                 CString d;
                 d.Format(_T("page '%s' built an empty tree"), page.idName);
@@ -324,6 +330,9 @@ Result Test_EveryPageBuilds()
 Result Test_EveryPageBuildsInBothLanguages()
 {
     LanguageSnapshot snapshot;
+
+    std::unique_ptr<GalleryPageBox> emptyPage = NewPage();
+    const int emptyHeight = (int)emptyPage->GetDesiredSize().cy;
 
     Language languages[] = { LangChinese, LangEnglish };
     for (int i = 0; i < 2; ++i)
@@ -341,7 +350,7 @@ Result Test_EveryPageBuildsInBothLanguages()
                     continue;
                 }
                 std::unique_ptr<DuiControl> root = page.build();
-                if (!root || root->GetChildCount() <= 0)
+                if (!root || (int)root->GetDesiredSize().cy <= emptyHeight)
                 {
                     CString d;
                     d.Format(_T("page '%s' failed to build in language %d"),
@@ -524,12 +533,15 @@ Result Test_DescriptionHeightGrowsWhenNarrow()
     const int kNarrowWidth = 320;
     const int kWideWidth = 1200;
 
+    // 用 ForceLayout 而不是 SetRect：后者在矩形没有变化时直接返回，而这里
+    // 每次给的矩形都不同，两者本来等价；用 ForceLayout 是因为它是公开的，
+    // Layout 本身是受保护的成员。
     RECT rcNarrow = { 0, 0, kNarrowWidth, kTallEnough };
-    page->Layout(rcNarrow);
+    page->ForceLayout(rcNarrow);
     SIZE narrow = page->GetDesiredSize();
 
     RECT rcWide = { 0, 0, kWideWidth, kTallEnough };
-    page->Layout(rcWide);
+    page->ForceLayout(rcWide);
     SIZE wide = page->GetDesiredSize();
 
     if (narrow.cy <= wide.cy)
@@ -559,7 +571,7 @@ Result Test_SectionsBecomeCards()
     AddVariantRow(page.get(), std::move(row3));
 
     // 两个段落 = 两张卡片 = 页面的两个直接子控件。
-    EXPECT_INT(page->GetChildCount(), 2, _T("SectionsBecomeCards"));
+    EXPECT_INT(page->GetChildCountForTests(), 2, _T("SectionsBecomeCards"));
     return OK(_T("SectionsBecomeCards"));
 }
 
@@ -574,7 +586,7 @@ Result Test_PlainPageHasNoCards()
     AddVariantRow(page.get(), std::move(row1));
 
     // 标题 + 说明 + 演示行 = 三个直接子控件，中间没有卡片这一层。
-    EXPECT_INT(page->GetChildCount(), 3, _T("PlainPageHasNoCards"));
+    EXPECT_INT(page->GetChildCountForTests(), 3, _T("PlainPageHasNoCards"));
     return OK(_T("PlainPageHasNoCards"));
 }
 

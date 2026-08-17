@@ -187,6 +187,7 @@
     <ClCompile Include="GalleryText.cpp" />
     <ClCompile Include="PageKit.cpp" />
     <ClCompile Include="PageRegistry.cpp" />
+    <ClCompile Include="GalleryTests.cpp" />
     <ClCompile Include="CaptureMode.cpp" />
     <!-- 演示页面按分组分文件，与 PageRegistry.h 里声明的取列表函数一一对应 -->
     <ClCompile Include="Pages_Overview.cpp" />
@@ -220,7 +221,6 @@
     <ClCompile Include="..\balloonui\DuiNinePatch.cpp" />
     <ClCompile Include="..\balloonui\DuiPaintAA.cpp" />
     <ClCompile Include="..\balloonui\DuiResMgr.cpp" />
-    <ClCompile Include="..\balloonui\HwndHostControl.cpp" />
     <!-- Kernel tests (live in balloonui/Tests/ but compiled into the
          gallery exe per project policy: tests aren't in the DLL). -->
     <ClCompile Include="..\balloonui\Tests\DuiNinePatchTests.cpp" />
@@ -244,7 +244,6 @@
     <ClCompile Include="..\balloonui\Tests\DuiGifTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiDropTargetTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiXmlBuilderTests.cpp" />
-    <ClCompile Include="..\balloonui\Tests\DuiCtlColorTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiTier3Tests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiThemeTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiListBoxTests.cpp" />
@@ -315,7 +314,11 @@
   <ItemGroup>
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="GalleryFrame.h" />
-    <ClInclude Include="Pages.h" />
+    <ClInclude Include="GalleryNav.h" />
+    <ClInclude Include="GalleryText.h" />
+    <ClInclude Include="GalleryTests.h" />
+    <ClInclude Include="PageKit.h" />
+    <ClInclude Include="PageRegistry.h" />
     <ClInclude Include="CaptureMode.h" />
   </ItemGroup>
   <ItemGroup>

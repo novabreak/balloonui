@@ -819,7 +819,7 @@ std::unique_ptr<DuiControl> Build_Gif()
     AddSection(page.get(),
                Txt(_T("位图的所有权"), _T("Who owns the bitmaps")),
                Txt(_T("GetFrameHbitmap 返回的位图句柄由 DuiGif 自己持有，")
-                   _T("调用方**不要**对它调用 DeleteObject —— 动图销毁时会")
+                   _T("调用方不要对它调用 DeleteObject —— 动图销毁时会")
                    _T("统一释放全部帧。SetGif 则相反：它把 DuiGif 的所有权")
                    _T("交给控件，控件销毁或再次 SetGif 时会释放上一个动图。"),
                    _T("The HBITMAP returned by GetFrameHbitmap belongs to the ")
@@ -932,6 +932,29 @@ HBITMAP CreateBottomUpDib(int nWidth, int nHeight, BYTE** ppBits)
     }
     *ppBits = (BYTE*)pBits;
     return hbm;
+}
+
+// 把一块像素内存里所有像素的 alpha 分量置成不透明。
+//
+// 用 GDI 往 32 位 DIBSection 上画东西时，画笔与文字只写颜色分量，alpha 分量
+// 保持建位图时的 0。这样的位图交给 GDI+ 有可能被当作带 alpha 的图解释，于是
+// 整张图都是全透明的、什么也画不出来。GDI 画完之后统一补上 alpha 就没有这
+// 层不确定性。
+//
+//   pBits：像素内存首地址，不能为空。
+//   nWidth / nHeight：像素尺寸。
+void ForceOpaqueAlpha(BYTE* pBits, int nWidth, int nHeight)
+{
+    if (pBits == NULL)
+    {
+        return;
+    }
+    const int nPixelCount = nWidth * nHeight;
+    for (int i = 0; i < nPixelCount; ++i)
+    {
+        pBits[i * kBytesPerPixel + 3] = kOpaqueAlpha;
+    }
+    ::GdiFlush();
 }
 
 // 造一张竖向一像素黑白相间的不透明位图。
@@ -1079,6 +1102,8 @@ HBITMAP MakeGradientLabelBitmap(int nWidth, int nHeight)
     ::SelectObject(hdcMem, hOldBitmap);
     ::DeleteDC(hdcMem);
     ::GdiFlush();
+    //GDI 画完的这张图 alpha 分量还是 0，补成不透明再交出去。
+    ForceOpaqueAlpha(pBits, nWidth, nHeight);
     return hbm;
 }
 
@@ -1131,6 +1156,8 @@ HBITMAP MakeNaivelyShrunkBitmap(HBITMAP hbmSrc, int nSrcW, int nSrcH,
     ::DeleteDC(hdcDst);
     ::DeleteDC(hdcSrc);
     ::GdiFlush();
+    //位块传输不保证把 alpha 分量一并搬过来，统一补成不透明。
+    ForceOpaqueAlpha(pBits, nDstW, nDstH);
     return hbmDst;
 }
 
@@ -1284,7 +1311,7 @@ void AppendContentSegment(bool bIsImage, LPCTSTR szText, DWORD_PTR tag,
     else
     {
         CString strText = (szText != NULL) ? szText : _T("");
-        //文本段里的换行会把说明标签撑成多行，这里换成可见的记号。
+        //说明标签只有一行的高度，文本段里的换行换成空格才不会被截断。
         strText.Replace(_T("\r"), _T(" "));
         strText.Replace(_T("\n"), _T(" "));
         strSegment.Format(Txt(_T("[文本 \"%s\"]"), _T("[text \"%s\"]")),
@@ -1696,9 +1723,13 @@ const int kGridCellCount = kGridRows * kGridCols;
 const int kGridW = kGridCols * kGridCellSide + (kGridCols - 1) * kGridGap;
 const int kGridH = kGridRows * kGridCellSide + (kGridRows - 1) * kGridGap;
 
+// 演示行下方说明文字分成两列时每列的宽度（像素）。取网格宽度的一半，两列
+// 说明正好压在网格的左右两半上。
+const int kCaptionColW = kGridW / 2;
 // 过期结果对照里单元格的边长（像素）。
 const int kStaleCellSide = 64;
-// 过期结果对照里一次连按提交多少个请求。
+// 过期结果对照里一次连按提交多少个请求。改这个值时记得同步改该段落说明里
+// 写的次数。
 const int kStaleBatchCount = 8;
 // 结果单元格的圆角半径（像素）。
 const int kCellCornerRadius = 6;
@@ -1891,8 +1922,8 @@ void ApplyBitmapToCell(DuiAvatar* pCell, HBITMAP* phSlot, HBITMAP hbmNew)
     *phSlot = hbmNew;
     if (pCell != NULL)
     {
+        //SetBitmap 内部已经触发重绘，这里不必再调一次 Invalidate。
         pCell->SetBitmap(hbmNew);
-        pCell->Invalidate();
     }
     if (hbmOld != NULL)
     {
@@ -1922,7 +1953,7 @@ void RefreshStaleCounters(const AsyncPageState& state)
     }
 }
 
-// 结果网格的到达进度。
+// 刷新第一段里那行状态文字，报告结果网格已经落位了多少张。
 //   state：页面状态。
 void RefreshArrivalStatus(const AsyncPageState& state)
 {
@@ -2158,7 +2189,7 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
                    _T("Synchronous versus asynchronous")),
                Txt(_T("界面线程上解码一张 PNG 只要几毫秒，几十上百张串起来")
                    _T("就是肉眼可见的卡顿。DuiAsyncImage 把解码挪到后台线程，")
-                   _T("完成后通过一个只收消息的隐藏窗口把回调投回**提交线程**，")
+                   _T("完成后通过一个只收消息的隐藏窗口把回调投回提交线程，")
                    _T("画廊有正常的消息循环，所以回调会自己到，不需要额外做")
                    _T("什么。下面两个按钮加载的是同一批图：按同步那个，窗口")
                    _T("在加载结束前完全不响应，拖不动滑块也滚不动页面；按")
@@ -2166,7 +2197,7 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
                    _T("Decoding one PNG on the UI thread costs a few ")
                    _T("milliseconds; a hundred of them in a row is visible ")
                    _T("jank. DuiAsyncImage moves decoding to a worker thread ")
-                   _T("and posts the callback back to the SUBMITTING thread ")
+                   _T("and posts the callback back to the submitting thread ")
                    _T("through a hidden message-only window - the gallery ")
                    _T("runs a normal message loop, so callbacks arrive on ")
                    _T("their own. Both buttons below load the same batch: the ")
@@ -2180,10 +2211,15 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
     demoRow->SetGap(kRowGap);
     AsyncPageState* pState = &demoRow->State();
 
-    std::unique_ptr<FnButton> buttonSync = MakeButton(
-        Txt(_T("同步加载 40 张"), _T("Load 40 sync")));
-    std::unique_ptr<FnButton> buttonAsync = MakeButton(
-        Txt(_T("异步加载 40 张"), _T("Load 40 async")));
+    //按钮上的张数直接由网格的格子数算出来，改了网格文字也跟着对。
+    CString strSyncText;
+    strSyncText.Format(Txt(_T("同步加载 %d 张"), _T("Load %d sync")),
+                       kGridCellCount);
+    CString strAsyncText;
+    strAsyncText.Format(Txt(_T("异步加载 %d 张"), _T("Load %d async")),
+                        kGridCellCount);
+    std::unique_ptr<FnButton> buttonSync = MakeButton(strSyncText);
+    std::unique_ptr<FnButton> buttonAsync = MakeButton(strAsyncText);
     std::unique_ptr<FnButton> buttonClear = MakeButton(
         Txt(_T("清空"), _T("Clear")));
     if (bHasFaces)
@@ -2248,7 +2284,7 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
         sliderRow->AddChild(MakeCaption(Txt(_T("加载期间试着拖动这个滑块："),
                                             _T("Try dragging this while ")
                                             _T("loading:"))),
-                            DuiLayout::Hint().Fixed(kGridW / 2));
+                            DuiLayout::Hint().Fixed(kCaptionColW));
         std::unique_ptr<DuiSlider> slider(new DuiSlider());
         slider->SetRange(0, 100);
         slider->SetPos(50, false);
@@ -2265,7 +2301,7 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
                Txt(_T("后台只有一个解码线程，请求按提交顺序处理，因此上面那")
                    _T("一批的结果会一格一格填进下面的网格。每个请求带一个")
                    _T("自定义的请求号，回调原样带回来，本页面靠它知道这张图")
-                   _T("该落到哪一格。结果里的位图**所有权转移给回调**，用完")
+                   _T("该落到哪一格。结果里的位图所有权转移给回调，用完")
                    _T("必须自己 DeleteObject —— 本页面把它记在页面状态里，")
                    _T("换图或离开页面时统一释放。"),
                    _T("A single worker thread decodes in submission order, so ")
@@ -2273,8 +2309,9 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
                    _T("time. Each request carries a caller-defined token that ")
                    _T("comes back with the result, which is how this page ")
                    _T("knows where an image belongs. The bitmap in the result ")
-                   _T("is OWNED BY THE CALLBACK - it has to be deleted by the ")
-                   _T("caller. This page keeps it in the page state and frees ")
+                   _T("belongs to the callback once it arrives, so the caller ")
+                   _T("has to delete it. This page keeps it in the page state ")
+                   _T("and frees ")
                    _T("it when the cell is replaced or the page goes away.")));
     {
         std::unique_ptr<DuiHBox> row(new DuiHBox());
@@ -2288,7 +2325,6 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
             cell->SetCornerRadius(kCellCornerRadius);
             //没有图时画一个浅色的空位，网格的形状才看得出来。
             cell->SetFallbackBgColor(RGB(226, 229, 234));
-            cell->SetName(_T(""));
             pState->m_cells[i] = cell.get();
             grid->AddChild(std::move(cell), DuiLayout::Hint()
                                .Fixed(kGridCellSide, kGridCellSide)
@@ -2335,7 +2371,6 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
         guardedCell->SetShape(DuiAvatar::ShapeRoundRect);
         guardedCell->SetCornerRadius(kCellCornerRadius);
         guardedCell->SetFallbackBgColor(RGB(226, 229, 234));
-        guardedCell->SetName(_T(""));
         pState->m_pGuardedCell = guardedCell.get();
         row->AddChild(std::move(guardedCell),
                       DuiLayout::Hint().Fixed(kStaleCellSide, kStaleCellSide)
@@ -2345,14 +2380,15 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
         naiveCell->SetShape(DuiAvatar::ShapeRoundRect);
         naiveCell->SetCornerRadius(kCellCornerRadius);
         naiveCell->SetFallbackBgColor(RGB(226, 229, 234));
-        naiveCell->SetName(_T(""));
         pState->m_pNaiveCell = naiveCell.get();
         row->AddChild(std::move(naiveCell),
                       DuiLayout::Hint().Fixed(kStaleCellSide, kStaleCellSide)
                                        .AlignC(DuiLayout::AlignCenter));
 
-        std::unique_ptr<FnButton> buttonStale = MakeButton(
-            Txt(_T("连按 8 次换图"), _T("Swap 8 times")));
+        CString strStaleText;
+        strStaleText.Format(Txt(_T("连着换 %d 次图"), _T("Swap %d times")),
+                            kStaleBatchCount);
+        std::unique_ptr<FnButton> buttonStale = MakeButton(strStaleText);
         if (bHasFaces)
         {
             buttonStale->onClick = [pState](FnButton*)
@@ -2369,18 +2405,18 @@ std::unique_ptr<DuiControl> Build_AsyncImage()
                                        .AlignC(DuiLayout::AlignCenter));
         row->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
                       DuiLayout::Hint().Weight(1));
-        AddVariantRow(page.get(), std::move(row), kStaleCellSide + 8);
+        AddVariantRow(page.get(), std::move(row), kStaleCellSide + kInnerGap);
 
         std::unique_ptr<DuiHBox> captionRow(new DuiHBox());
         captionRow->SetGap(kRowGap);
         std::unique_ptr<DuiLabel> guardedLabel = MakeCaption(_T(""));
         pState->m_pGuardedLabel = guardedLabel.get();
         captionRow->AddChild(std::move(guardedLabel),
-                             DuiLayout::Hint().Fixed(kGridW / 2));
+                             DuiLayout::Hint().Fixed(kCaptionColW));
         std::unique_ptr<DuiLabel> naiveLabel = MakeCaption(_T(""));
         pState->m_pNaiveLabel = naiveLabel.get();
         captionRow->AddChild(std::move(naiveLabel),
-                             DuiLayout::Hint().Fixed(kGridW / 2));
+                             DuiLayout::Hint().Fixed(kCaptionColW));
         captionRow->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
                              DuiLayout::Hint().Weight(1));
         AddVariantRow(page.get(), std::move(captionRow), kCaptionRowH);

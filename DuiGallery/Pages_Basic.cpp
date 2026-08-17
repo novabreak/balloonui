@@ -1860,7 +1860,7 @@ const PageEntry* GetBasicPages(int& outCount)
         { _T("button"),     _T("DuiButton　按钮"),             _T("DuiButton"),          &Build_Button,             true },
         { _T("badge"),      _T("DuiBadge　徽标"),              _T("DuiBadge"),           &Build_Badge,              true },
         { _T("avatar"),     _T("DuiAvatar　头像"),             _T("DuiAvatar"),          &Build_Avatar,             true },
-        { _T("separator"),  _T("DuiSeparator / DuiGroupBox　分隔线与分组框"), _T("Separator & GroupBox"), &Build_SeparatorGroupBox, true },
+        { _T("separator"),  _T("分隔线与分组框"), _T("Separator & GroupBox"), &Build_SeparatorGroupBox, true },
         { _T("toast"),      _T("DuiToast　浮动提示条"),        _T("DuiToast"),           &Build_Toast,              true },
     };
     outCount = (int)(sizeof(s_pages) / sizeof(s_pages[0]));

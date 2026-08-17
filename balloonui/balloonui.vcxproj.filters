@@ -69,8 +69,6 @@
     <ClCompile Include="DuiTheme.cpp">        <Filter>Kernel</Filter></ClCompile>
     <ClInclude Include="DuiXmlBuilder.h">     <Filter>Kernel</Filter></ClInclude>
     <ClCompile Include="DuiXmlBuilder.cpp">   <Filter>Kernel</Filter></ClCompile>
-    <ClInclude Include="HwndHostControl.h">   <Filter>Kernel</Filter></ClInclude>
-    <ClCompile Include="HwndHostControl.cpp"> <Filter>Kernel</Filter></ClCompile>
 
     <!-- ============== Controls / Layout ============== -->
     <ClInclude Include="Controls\Layout\DuiLayout.h">      <Filter>Controls\Layout</Filter></ClInclude>

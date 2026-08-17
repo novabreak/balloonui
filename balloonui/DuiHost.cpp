@@ -169,6 +169,7 @@ void DuiHost::EnsureWin32Focus()
         // 已经在手上，不必再要。
         return;
     }
+
     // ::SetFocus 会同步发出本窗口的 WM_SETFOCUS，而那里又会给当前 DUI 焦点
     // 控件发一次获焦通知。刚才 SetDuiFocus 已经发过了，这里用标志压住，
     // 免得同一次获焦发出两条通知（业务侧常据此做「开始编辑」之类的动作，

@@ -8,6 +8,7 @@
 #include "PageKit.h"
 #include "PageRegistry.h"
 #include "GalleryText.h"
+#include "GalleryTests.h"
 
 #include "../balloonui/DuiAnimation.h"
 #include "../balloonui/DuiTheme.h"
@@ -33,7 +34,6 @@
 #include "../balloonui/Tests/DuiGifTests.h"
 #include "../balloonui/Tests/DuiDropTargetTests.h"
 #include "../balloonui/Tests/DuiXmlBuilderTests.h"
-#include "../balloonui/Tests/DuiCtlColorTests.h"
 #include "../balloonui/Tests/DuiTier3Tests.h"
 #include "../balloonui/Tests/DuiThemeTests.h"
 #include "../balloonui/Tests/DuiListBoxTests.h"
@@ -95,9 +95,11 @@ const int kLangButtonWidth = 84;
 // 主题切换按钮的宽度（像素）。
 const int kThemeButtonWidth = 78;
 // 左侧导航栏的初始宽度（像素）。
-const int kNavInitialWidth = 236;
+// 取值依据是实测：页面标题最长的那几条（例如「SearchBox / SpinBox　搜索与
+// 微调」）在 236 像素下会被截断成省略号，280 像素下能完整显示。
+const int kNavInitialWidth = 280;
 // 导航栏允许被拖到的最小宽度（像素）。再窄就装不下带缩进的页面标题了。
-const int kNavMinWidth = 160;
+const int kNavMinWidth = 180;
 // 右侧内容区允许被压缩到的最小宽度（像素）。
 const int kContentMinWidth = 320;
 // 分隔条的厚度（像素）。
@@ -163,10 +165,15 @@ BOOL GalleryFrame::OnEraseBkgnd(CDCHandle)
 
 std::unique_ptr<DuiControl> GalleryFrame::BuildToolBar()
 {
+    // 工具条要有自己的底色，才能与下方的内容区分开。底色能力只在竖直布局
+    // 容器上有（DuiVBox 的卡片样式），水平布局容器没有，所以外面套一层
+    // 只装这一条的竖直容器。
+    std::unique_ptr<DuiVBox> barHolder(new DuiVBox());
+    barHolder->SetBgColor(DuiTheme::Inst().Get(DuiTheme::SurfaceBg));
+
     std::unique_ptr<DuiHBox> bar(new DuiHBox());
     bar->SetPadding(kToolBarPadding);
     bar->SetGap(kToolBarGap);
-    bar->SetBgColor(DuiTheme::Inst().Get(DuiTheme::SurfaceBg));
 
     std::unique_ptr<DuiLabel> title(new DuiLabel());
     title->SetText(Txt(_T("balloonui 控件画廊"), _T("balloonui Control Gallery")));
@@ -198,7 +205,8 @@ std::unique_ptr<DuiControl> GalleryFrame::BuildToolBar()
     highContrast->SetText(Txt(_T("高对比度"), _T("Contrast")));
     bar->AddChild(std::move(highContrast), DuiLayout::Hint().Fixed(kThemeButtonWidth));
 
-    return std::unique_ptr<DuiControl>(bar.release());
+    barHolder->AddChild(std::move(bar), DuiLayout::Hint().Weight(1));
+    return std::unique_ptr<DuiControl>(barHolder.release());
 }
 
 void GalleryFrame::BuildRoot()
@@ -218,9 +226,18 @@ void GalleryFrame::BuildRoot()
 
     std::unique_ptr<GalleryNav> nav(new GalleryNav());
     m_pNav = nav.get();
-    splitter->SetPane(0, std::unique_ptr<DuiControl>(nav.release()));
-    // 内部控件要等它挂进控件树之后再建，这样搜索框与树拿得到宿主窗口。
+    // 导航栏的内部控件必须在整棵树交给宿主**之前**建好。
+    //
+    // 反过来的顺序（先 SetRoot、再往导航栏里加控件）行不通：SetRoot 会立刻
+    // 排一次版，此后新加的子控件只有再排一次才有矩形，而分隔条给两个面板
+    // 设矩形用的是 SetRect —— 它在矩形没有变化时直接返回。切换语言或主题时
+    // 重建控件树，导航栏拿到的矩形与上一次一模一样，于是那次返回把重排整个
+    // 挡掉了，表现是左侧导航栏一片空白。
+    //
+    // 先建后挂就没有这个问题：SetRoot 会把宿主指针递归发给每一个控件，并
+    // 完成第一次排列。
     m_pNav->BuildContents();
+    splitter->SetPane(0, std::unique_ptr<DuiControl>(nav.release()));
 
     std::unique_ptr<DuiScrollView> content(new DuiScrollView());
     content->SetCtrlId(kIdContentScroll);
@@ -233,6 +250,39 @@ void GalleryFrame::BuildRoot()
     root->AddChild(std::move(splitter), DuiLayout::Hint().Weight(1));
 
     m_host.SetRoot(std::move(root));
+
+    // 导航栏内部的控件要等整棵树挂上宿主之后再建。SetRoot 会把宿主指针
+    // 递归设给每一个控件，此时新建的搜索框与页面树才能立刻拿到宿主。
+    m_pNav->BuildContents();
+
+    // 建完之后必须自己触发一次排列。添加子控件只是把它挂进列表，不会
+    // 重新排版，新加的控件会停在零矩形上、什么都画不出来。窗口刚创建时
+    // 随后而来的 WM_SIZE 会顺带把这件事做了，但切换语言或主题时是就地
+    // 重建、没有尺寸变化，不显式排一次左侧导航栏就是空白的。
+    // 用 ForceLayout 而不是 SetRect：后者在矩形没有变化时直接返回，而这里
+    // 恰恰是矩形没变、变的是子控件。
+    RelayoutRoot();
+}
+
+void GalleryFrame::RelayoutRoot()
+{
+    if (!m_host.IsWindow())
+    {
+        return;
+    }
+    DuiControl* root = m_host.GetRoot();
+    if (root == NULL)
+    {
+        return;
+    }
+    CRect rcClient;
+    m_host.GetClientRect(&rcClient);
+    if (rcClient.IsRectEmpty())
+    {
+        return;
+    }
+    root->ForceLayout(rcClient);
+    m_host.Invalidate(FALSE);
 }
 
 void GalleryFrame::SwitchToPage(LPCTSTR pageId)
@@ -255,6 +305,12 @@ void GalleryFrame::SwitchToPage(LPCTSTR pageId)
     // 截图标记同样指向即将销毁的控件。命令行截图模式会在每建完一页之后
     // 立刻取走并清空，交互模式下没人取，这里主动清掉避免越积越多。
     GetCaptureMarks().clear();
+
+    // 清空动画管理器的活跃列表。动画对象持有指向页面内控件的回调，使用者
+    // 在动画没跑完时切走页面，下一次脉冲就会写向已经释放的内存。清空必须
+    // 排在构建新页面之前 —— 新页面在构建过程中可能自己就启动了动画
+    // （动图控件就是一例），先建后清会把新页面的动画一起清掉。
+    DuiAnimMgr::Inst().Clear();
 
     std::unique_ptr<DuiControl> content = entry->build();
     m_pContent->SetContent(std::move(content));
@@ -297,13 +353,7 @@ void GalleryFrame::RebuildAll()
         pageId = GetDefaultPageId();
     }
     SwitchToPage(pageId);
-
-    CRect rcClient;
-    GetClientRect(&rcClient);
-    if (m_host.IsWindow())
-    {
-        m_host.Invalidate(FALSE);
-    }
+    RelayoutRoot();
 }
 
 LRESULT GalleryFrame::OnRebuildAllMsg(UINT, WPARAM, LPARAM)
@@ -408,8 +458,6 @@ void GalleryFrame::RunAllTests()
     report += _T("\r\n");
     report += DuiXmlBuilderTests::RunAll();
     report += _T("\r\n");
-    report += DuiCtlColorTests::RunAll();
-    report += _T("\r\n");
     report += DuiTier3Tests::RunAll();
     report += _T("\r\n");
     report += DuiThemeTests::RunAll();
@@ -461,6 +509,10 @@ void GalleryFrame::RunAllTests()
     report += DuiSmallControlsTests::RunAll();
     report += _T("\r\n");
     report += DuiToolTipTests::RunAll();
+    report += _T("\r\n");
+    // 画廊自己的用例：页面注册表、中英文切换、导航搜索的匹配规则，以及
+    // 段落说明按宽度自动换行这一机制。
+    report += Gallery::GalleryTests::RunAll();
 
     int start = 0;
     while (start < report.GetLength())

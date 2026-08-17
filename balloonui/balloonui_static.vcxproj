@@ -193,7 +193,6 @@
     <ClCompile Include="DuiNinePatch.cpp" />
     <ClCompile Include="DuiPaintAA.cpp" />
     <ClCompile Include="DuiResMgr.cpp" />
-    <ClCompile Include="HwndHostControl.cpp" />
     <!-- Controls / Layout -->
     <ClCompile Include="Controls\Layout\DuiLayout.cpp" />
     <ClCompile Include="Controls\Layout\DuiSplitter.cpp" />
@@ -266,7 +265,6 @@
     <ClInclude Include="DuiResMgr.h" />
     <ClInclude Include="DuiTheme.h" />
     <ClInclude Include="DuiXmlBuilder.h" />
-    <ClInclude Include="HwndHostControl.h" />
     <!-- Skin manager + utility deps -->
     <ClInclude Include="File.h" />
     <ClInclude Include="ImageEx.h" />

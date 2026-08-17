@@ -794,7 +794,7 @@ std::unique_ptr<DuiControl> Build_TabPage()
 const PageEntry* GetLayoutPages(int& outCount)
 {
     static const PageEntry s_pages[] = {
-        { _T("layout-boxes"), _T("DuiVBox / DuiHBox / DuiGrid　排列容器"), _T("Layout Containers"), &Build_Layout,   true },
+        { _T("layout-boxes"), _T("VBox / HBox / Grid　排列容器"), _T("Layout Containers"), &Build_Layout,   true },
         { _T("splitter"),     _T("DuiSplitter　分隔条"),                  _T("DuiSplitter"),       &Build_Splitter, true },
         { _T("dock"),         _T("DuiDock　停靠布局"),                    _T("DuiDock"),           &Build_Dock,     true },
         { _T("tab-page"),     _T("DuiTabPage　标签页容器"),               _T("DuiTabPage"),        &Build_TabPage,  true },

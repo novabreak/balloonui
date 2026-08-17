@@ -1540,10 +1540,10 @@ std::unique_ptr<DuiControl> Build_ComboBox()
 const PageEntry* GetInputPages(int& outCount)
 {
     static const PageEntry s_pages[] = {
-        { _T("edit-host"),   _T("DuiEditHost　输入框（兼容外壳）"), _T("DuiEditHost"),   &Build_Edit,           true },
+        { _T("edit-host"),   _T("DuiEditHost　兼容外壳"), _T("DuiEditHost"),   &Build_Edit,           true },
         { _T("edit"),        _T("DuiEdit　无窗口输入框"),           _T("DuiEdit"),       &Build_EditWindowless, true },
         { _T("rich-edit"),   _T("DuiRichEdit　富文本"),             _T("DuiRichEdit"),   &Build_RichText,       true },
-        { _T("search-spin"), _T("DuiSearchBox / DuiSpinBox　搜索框与数字微调框"), _T("SearchBox & SpinBox"), &Build_SearchSpin, true },
+        { _T("search-spin"), _T("搜索框与数字微调框"), _T("SearchBox & SpinBox"), &Build_SearchSpin, true },
         { _T("slider"),      _T("DuiSlider　滑块"),                 _T("DuiSlider"),     &Build_Slider,         true },
         { _T("switch"),      _T("DuiSwitch　开关"),                 _T("DuiSwitch"),     &Build_Switch,         true },
         { _T("combo-box"),   _T("DuiComboBox　下拉框"),             _T("DuiComboBox"),   &Build_ComboBox,       true },
