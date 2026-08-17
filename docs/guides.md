@@ -439,8 +439,6 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&)
 
 **不需要 EnsureCreated** —— 本控件没有子窗口，builder 建出来就能用。详见 [§3.4](#xml-ensure-created)。
 
-builder 实际建出来的类型是兼容外壳 `DuiEditHost`（它是 `DuiEdit` 的子类，只多一个占位文字显示开关）。这样存量代码里大量的 `dynamic_cast<DuiEditHost*>` 仍然能拿到指针。新写的转换用 `DuiEdit*` 即可，两者都成立。
-
 **事件**：
 
 | code | 触发时机 |
@@ -549,13 +547,13 @@ XML 仅配列定义；节点（`AddRoot`/`AddChild`）必须由 C++ 端添加，
 
 ### 3.4 EnsureCreated 约定已作废
 
-2026-08-17 之前，4 个输入类标签（`<edit>` / `<searchbox>` / `<spinbox>` / `<combobox>`）内部寄宿一个真的 Win32 输入框子窗口。这些子窗口必须有<u>已创建的父窗口</u>才能建出来，而 XML 解析阶段控件还没挂上 host，所以 builder 不会主动创建它们，调用方必须在 host 有了真窗口之后自己补一次 `EnsureCreated(hostHwnd)`。
+2026-08-17 之前，4 个输入类标签（`<edit>` / `<searchbox>` / `<spinbox>` / `<combobox>`）内部各自内嵌一个真的 Win32 输入框子窗口。这些子窗口必须有<u>已创建的父窗口</u>才能建出来，而 XML 解析阶段控件还没挂上 host，所以 builder 不会主动创建它们，调用方必须在 host 有了真窗口之后自己补一次 `EnsureCreated(hostHwnd)`。
 
 输入框改为无窗口实现（[DuiEdit](#DuiEdit)）之后，**这条约定整个作废**：
 
 - builder 建出来的输入框**构造完就能用** —— 可以立即设文本、量尺寸、改属性，不依赖任何窗口。
 - 正确的 wiring 顺序只剩两步：`FromString(xml)` 拿到 root，然后 `host.SetRoot(std::move(root))` 或 `frame.SetClientContent(...)` 挂上去。没有第三步。
-- 兼容外壳 `DuiEditHost` 上仍留着一个 `EnsureCreated`，是**空实现、恒返回成功**，纯粹为了让存量调用点零改动通过编译。新代码不要再调它；存量调用点可以就地删除，删除顺序不影响功能。
+- `EnsureCreated` 这个方法本身已经从库里**删除**，输入框类控件上都不再有它（兼容期一度保留过一份空实现，也已一并移除）。存量调用点会直接编译报错，把那一行删掉即可，删除顺序不影响功能。
 - 取内部子窗口句柄的 `GetHostedHwnd` 已经**删除**。无窗口实现下它无从返回有意义的值，保留成返回空句柄的话，所有调用点都会在运行期静默失效。删掉它，让这些地方变成编译错误，逐个改写成无窗口的等价做法：取焦点用 `SetFocus`，全选用 `SelectAll`，判断焦点用 `IsFocused`。
 
 ```
@@ -668,8 +666,7 @@ DuiControl                      // 逻辑节点基类（无 HWND）
 ├── // — 输入 —
 ├── DuiRichEdit                  // 无窗口富文本，直接用系统文本服务
 │   └── DuiEdit                  // 无窗口普通输入框（单行 / 多行纯文本）
-│       └── DuiEditHost          // 兼容外壳，等同于 DuiEdit
-│           └── DuiSearchBox     // 装好放大镜 + 清除按钮的输入框
+│       └── DuiSearchBox         // 装好放大镜 + 清除按钮的输入框
 ├── DuiSpinBox                   // 内嵌一个输入框（聚合，非继承）
 ├── DuiSlider                    // 横/竖 滑块
 ├── DuiSwitch                    // iOS 风格圆角胶囊开关（150ms 动画）
@@ -694,8 +691,6 @@ DuiControl                      // 逻辑节点基类（无 HWND）
 ```
 
 **注意**：`DuiSpinBox` 内部嵌了一个输入框，但用<u>聚合</u>方式（持有一个子控件而不是继承），因为它自绘的上下三角与输入框是并列关系，聚合更清爽。`DuiSearchBox` 早期同款，后来重构成<u>继承</u>输入框 —— 输入框有了[左 / 右内联图标 API](#DuiEdit-IconApi) 之后，放大镜与清除按钮直接装成图标即可，比重写绘制、布局、命中测试三套逻辑精简得多。
-
-**关于 `DuiEditHost`**：这个类名下曾经是一个内嵌真 Win32 输入框子窗口的控件。2026-08-17 输入框改为无窗口实现之后，它退化成 `DuiEdit` 的一层薄兼容外壳，只多一个占位文字显示开关，为的是让两个程序里几百处存量调用零改动通过编译。**新代码一律直接用 `DuiEdit`。**
 
 ### 5.2 真窗口链 — `DuiHost` 体系
 
@@ -1066,7 +1061,7 @@ HWND（顶层窗口 / 老对话框某区域）
 
 共有 3 种把 DuiHost 挂到操作系统的方式 —— 各控件段的 snippet<u>不再重复</u> host 创建代码，统一参考下面 3 个最简骨架：
 
-#### ① 普通 HWND 寄宿（嵌入老对话框某区域）
+#### ① 子窗口（嵌入既有对话框的某块区域）
 
 给 `DuiHost` 一个 parent HWND，它就在那个 HWND 的客户区里画。常见场景：把一块 DUI 区域嵌入既有的 WTL / MFC 对话框。
 
@@ -2016,8 +2011,6 @@ host.SetRoot(std::move(root));
 
 纯文本单行 / 多行输入框，**没有自己的窗口**。它是 [DuiRichEdit](#DuiRichEdit) 的子类：排版、光标、选区、输入法、剪贴板、右键菜单这些能力全部由基类提供（基类直接调用 Windows 自带的富文本排版引擎），本类只补上"普通输入框"相对于富文本框多出来的那部分语义 —— 单行时回车不换行、左右两侧的内联图标栏、密码框的显隐切换按钮、单行文字垂直居中。
 
-**`DuiEditHost` 是保留下来的兼容名。**这个类名下曾经是一个内嵌真 Win32 输入框子窗口的控件；2026-08-17 输入框改为无窗口实现之后，它退化成 `DuiEdit` 的一层薄外壳（只多一个占位文字显示开关），为的是让存量调用零改动通过编译。二者是同一个控件，本节的全部内容对它同样成立。**新代码一律直接用 `DuiEdit`。**
-
 #### 无窗口化带来的变化
 
 | 能力 | 成立的原因 |
@@ -2168,7 +2161,7 @@ if (n->ctrlId == IDC_NICKNAME) {
 | `DUIN_EDIT_LEFT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 81`)</small> | 左侧 `SetIconClickable(LeftIcon, true)` 之后，在该区域内按下左键 | 0 |
 | `DUIN_EDIT_RIGHT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 82`)</small> | 右侧同理 | 0 |
 
-**旧通知码名保留为别名**：`DuiEditHost::DUIEN_LEFT_ICON_CLICK` / `DUIEN_RIGHT_ICON_CLICK` 等值转发到上面两个新码。数值本身变了（新控件另开了取值段，避开库内十余个控件挤在 `DUIN_CUSTOM + 1` 那一档的老问题），但存量代码比较的是符号而不是字面数值，因此不受影响。新代码用新名字。
+**这两个通知码另开了取值段**，从 `DUIN_CUSTOM + 80` 起算，而不是沿用库内十余个控件挤在一起的 `DUIN_CUSTOM + 1` 那一档，这样能减少与别的控件撞号。但派发时仍然要连 `ctrlId` 一起判断，不能只比 `code`。
 
 **与密码显隐按钮（`SetShowEyeToggle`）的关系**：右侧图标和密码显隐按钮共用右侧那条区域。当 `password=true` 且 `SetShowEyeToggle(true)` 时，右侧图标整体让位 —— 它的绘制与命中都被忽略，也不会发出右侧图标点击通知。左侧图标不受影响，可以与显隐按钮共存。
 
@@ -2314,7 +2307,7 @@ void MyEdit::OnBuildContextMenu(std::vector<balloonwjui::DuiRichEditMenuItem>& i
 
 带搜索图标 + 占位符的紧凑搜索框。键入后发 `DUIN_VALUECHANGED`。
 
-**实现：输入框的一层预设** —— DuiSearchBox <u>继承</u>普通输入框（[DuiEdit](#DuiEdit)，经兼容外壳 `DuiEditHost`），构造函数里用[内联图标接口](#DuiEdit-IconApi)装好左侧放大镜；文字变化时在非空则显示、空则隐藏右侧清除按钮；拦截右侧图标点击就地清空文本，不让这条点击冒泡到业务代码。改成继承方式之前是聚合 + 自绘约 250 行，之后约 80 行。<u>对调用方的接口表面零变化</u>：`SetGlyphStripWidth` / `SetClearStripWidth` / `IsClearShowing` / `GetClearRect` / `GetEdit` 语义全部保留（`GetEdit` 返回 `this`，因为本类<u>就是</u>输入框）。
+**实现：输入框的一层预设** —— DuiSearchBox 直接<u>继承</u>普通输入框（[DuiEdit](#DuiEdit)），构造函数里用[内联图标接口](#DuiEdit-IconApi)装好左侧放大镜；文字变化时在非空则显示、空则隐藏右侧清除按钮；拦截右侧图标点击就地清空文本，不让这条点击冒泡到业务代码。改成继承方式之前是聚合 + 自绘约 250 行，之后约 80 行。<u>对调用方的接口表面零变化</u>：`SetGlyphStripWidth` / `SetClearStripWidth` / `IsClearShowing` / `GetClearRect` / `GetEdit` 语义全部保留（`GetEdit` 返回 `this`，因为本类<u>就是</u>输入框）。
 
 **典型父：**任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。挂进去就能用，没有额外的创建步骤。常见用法是放在联系人 / 文件列表的顶部。
 
@@ -6674,7 +6667,7 @@ frame.ShowWindow(nCmdShow);
 
 ## 12. 按需裁剪 (Feature Strip)
 
-balloonui 提供 31 个控件 + 一个 XML builder（`DuiEditHost` 是 `DuiEdit` 的兼容名，同一个控件，不重复计数）。但实际项目里业务多半只用其中一部分（聊天客户端可能不需要 `DuiTreeView`，工具类应用不需要 `DuiEmojiPanel`，等等）。本节介绍如何用<u>预处理器宏</u>把没用到的控件从编译过程中剔除，从而让最终 `balloonui.dll` / `.lib` 体积变小。
+balloonui 提供 31 个控件 + 一个 XML builder。但实际项目里业务多半只用其中一部分（聊天客户端可能不需要 `DuiTreeView`，工具类应用不需要 `DuiEmojiPanel`，等等）。本节介绍如何用<u>预处理器宏</u>把没用到的控件从编译过程中剔除，从而让最终 `balloonui.dll` / `.lib` 体积变小。
 
 ### 12.1 工作原理
 
@@ -6697,7 +6690,7 @@ balloonui 提供 31 个控件 + 一个 XML builder（`DuiEditHost` 是 `DuiEdit`
 | `BUI_DISABLE_BADGE` | DuiBadge | `<badge>` XML 失效 | — |
 | `BUI_DISABLE_SEPARATOR` | DuiSeparator | `<separator>` XML 失效 | — |
 | `BUI_DISABLE_GROUPBOX` | DuiGroupBox | `<groupbox>` XML 失效 | — |
-| `BUI_DISABLE_EDIT` | DuiEdit（及其兼容外壳 DuiEditHost） | `<edit>` XML 失效 | SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW |
+| `BUI_DISABLE_EDIT` | DuiEdit | `<edit>` XML 失效 | SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW |
 | `BUI_DISABLE_IMAGEOLE` | CDuiImageOle | RichEdit 内嵌图片不可用 | — |
 | `BUI_DISABLE_RICHTEXT` | DuiRichEdit / DuiTextHost / DuiTextServices | `<richtext>` XML 失效；库内将没有任何文本编辑能力 | 必须<u>一并</u>关掉 EDIT（见下） |
 | `BUI_DISABLE_SEARCHBOX` | DuiSearchBox | `<searchbox>` XML 失效 | — |

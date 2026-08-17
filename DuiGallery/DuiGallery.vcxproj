@@ -178,6 +178,7 @@
   <Target Name="CopyGalleryAssets" AfterTargets="Build">
     <Exec Command="xcopy /Y /D /I /E &quot;$(ProjectDir)assets\Image&quot; &quot;$(OutDir)Image&quot;" />
     <Exec Command="xcopy /Y /D /I /E &quot;$(ProjectDir)assets\Face&quot; &quot;$(OutDir)Face&quot;" />
+    <Exec Command="xcopy /Y /D /I /E &quot;$(ProjectDir)assets\Skins&quot; &quot;$(OutDir)Skins&quot;" />
   </Target>
   <ItemGroup>
     <!-- DuiGallery own sources -->
@@ -255,7 +256,6 @@
     <ClCompile Include="..\balloonui\Tests\DuiInspectorGoldenTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiComboBoxTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiLabelTests.cpp" />
-    <ClCompile Include="..\balloonui\Tests\DuiEditHostTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiEditTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiSearchBoxTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiLayoutTests.cpp" />
@@ -276,7 +276,6 @@
     <ClCompile Include="..\balloonui\Controls\Basic\DuiSeparator.cpp" />
     <ClCompile Include="..\balloonui\Controls\Basic\DuiGroupBox.cpp" />
     <!-- Controls / Input -->
-    <ClCompile Include="..\balloonui\Controls\Input\DuiEditHost.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiTextServices.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiTextHost.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiEdit.cpp" />

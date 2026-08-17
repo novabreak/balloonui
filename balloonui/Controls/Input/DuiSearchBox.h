@@ -13,7 +13,7 @@
 #if BUI_FEATURE_SEARCHBOX
 
 // .cpp 必须先 include stdafx.h（项目 PCH 约定）。
-#include "DuiEditHost.h"
+#include "DuiEdit.h"
 
 namespace balloonwjui {
 
@@ -21,10 +21,10 @@ namespace balloonwjui {
 // DuiSearchBox —— 带放大镜与清除叉号的搜索框
 // =================================================================
 //
-// 本控件是 DuiEditHost（普通输入框的兼容外壳，本体为无窗口的 DuiEdit）的
-// 预设包装：直接继承它，在构造函数里把基类原生的左右内联图标接口配置成搜索
-// 框该有的样子。全部输入行为（文本编辑、输入法、占位文字、多行、最大长度、
-// 边框与底色等）都从基类继承，本类没有任何重复实现。
+// 本控件是普通输入框 DuiEdit（无窗口实现）的预设包装：直接继承它，在构造函数
+// 里把基类原生的左右内联图标接口配置成搜索框该有的样子。全部输入行为（文本
+// 编辑、输入法、占位文字、多行、最大长度、边框与底色等）都从基类继承，本类
+// 没有任何重复实现。
 //
 // ─────────────────────────────────────────────────────────────────
 // 历史
@@ -75,7 +75,7 @@ namespace balloonwjui {
 //
 // 事件：
 //   · DUIN_VALUECHANGED —— 文字变化（含点击清除叉号导致的清空）；extra 恒为 0。
-class BUI_API DuiSearchBox : public DuiEditHost
+class BUI_API DuiSearchBox : public DuiEdit
 {
 public:
     DuiSearchBox();
@@ -102,7 +102,7 @@ public:
     //
     // 历史接口：本类早期是聚合关系（持有一个输入框子控件），返回的是那个子
     // 控件。重构之后本类自己就是输入框，直接返回 this，供存量调用方沿用。
-    DuiEditHost* GetEdit() { return this; }
+    DuiEdit* GetEdit() { return this; }
 
 protected:
     // 文字内容变化时同步清除叉号的显隐。用户编辑与业务代码调 SetText 都会

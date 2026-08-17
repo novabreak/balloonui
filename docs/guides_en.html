@@ -905,8 +905,6 @@ just writing <code>fixedHeight="22"</code> inside an hbox will <u>not</u> shrink
 
 <p><b>No EnsureCreated needed</b> — this control has no child window; whatever the builder produces is ready to use. See <a href="#xml-ensure-created">§3.4</a>.</p>
 
-<p class="note">The type the builder actually instantiates is the compatibility shell <code>DuiEditHost</code> (a subclass of <code>DuiEdit</code> that only adds a placeholder-visibility switch), so that the many existing <code>dynamic_cast&lt;DuiEditHost*&gt;</code> calls still return a pointer. New code can simply cast to <code>DuiEdit*</code>; both work.</p>
-
 <p><b>Events</b>:</p>
 <table>
   <tr><th>code</th><th>When it fires</th></tr>
@@ -1016,7 +1014,7 @@ just writing <code>fixedHeight="22"</code> inside an hbox will <u>not</u> shrink
 <ul>
   <li>Whatever the builder produces is <b>ready to use right after construction</b> — you can set text, measure it and change its properties immediately, with no window involved.</li>
   <li>The correct wiring order is only two steps now: <code>FromString(xml)</code> to get the root, then <code>host.SetRoot(std::move(root))</code> or <code>frame.SetClientContent(...)</code> to attach it. There is no third step.</li>
-  <li>The compatibility shell <code>DuiEditHost</code> still carries an <code>EnsureCreated</code>, but it is an <b>empty implementation that always returns success</b>, kept purely so existing call sites still compile unchanged. New code must not call it; existing call sites can be deleted in place, in any order.</li>
+  <li>The <code>EnsureCreated</code> method itself has been <b>removed</b> from the library; none of the text-input controls has it any more (an empty implementation was kept for a while during the transition, and that is gone too). Existing call sites now fail to compile, so delete that line; the order in which you delete them does not matter.</li>
   <li><code>GetHostedHwnd</code>, which returned the internal child window handle, has been <b>removed</b>. A windowless control has no meaningful value to return, and leaving it in place returning a null handle would make every call site fail silently at run time. Removing it turns those places into compile errors instead, so each one can be rewritten the windowless way: <code>SetFocus</code> to take focus, <code>SelectAll</code> to select everything, <code>IsFocused</code> to test focus.</li>
 </ul>
 
@@ -1122,8 +1120,7 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
 ├── <i>// — Input —</i>
 ├── DuiRichEdit                  <em>// Windowless rich text, on the system text services</em>
 │   └── DuiEdit                  <em>// Windowless plain text box (single-/multi-line)</em>
-│       └── DuiEditHost          <em>// Compatibility shell, equivalent to DuiEdit</em>
-│           └── DuiSearchBox     <em>// A text box preloaded with magnifier + clear button</em>
+│       └── DuiSearchBox         <em>// A text box preloaded with magnifier + clear button</em>
 ├── DuiSpinBox                   <em>// Embeds a text box by aggregation (not inheritance)</em>
 ├── DuiSlider                    <em>// Horizontal/vertical slider</em>
 ├── DuiSwitch                    <em>// iOS-style rounded pill switch (150 ms animation)</em>
@@ -1148,8 +1145,6 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
 </pre>
 
 <p class="note"><b>Note</b>: <code>DuiSpinBox</code> embeds a text box, but does so by <u>aggregation</u> (it holds a child control rather than inheriting) — its custom-drawn up/down triangles sit beside the text box, so aggregation reads cleaner. <code>DuiSearchBox</code> originally did the same, but was later refactored to <u>inherit</u> from the text box — once the text box grew a <a href="#DuiEdit-IconApi">left/right inline-icon API</a>, the magnifier and clear button could be installed as icons directly, which is far leaner than reimplementing paint, layout and hit-testing.</p>
-
-<p class="note"><b>About <code>DuiEditHost</code></b>: this class name used to denote a control that embedded a real Win32 text box child window. Once the text box went windowless on 2026-08-17, it degenerated into a thin compatibility shell over <code>DuiEdit</code>, adding only a placeholder-visibility switch, so that the several hundred existing call sites across the two applications keep compiling unchanged. <b>New code should always use <code>DuiEdit</code> directly.</b></p>
 
 <h3>5.2 Real-window chain — the <code>DuiHost</code> family</h3>
 <p>Every "real Win32 window" derives from <code>DuiHost</code>. <code>DuiHost</code> itself derives from ATL's <code>CWindowImpl</code>, so you can use the ATL idioms <code>Create</code> / <code>SubclassWindow</code> / <code>m_hWnd</code> directly.</p>
@@ -1498,7 +1493,7 @@ menu.AddItem(IDM_DEL,   _T("Delete"), _T("Del"), /*danger*/ true);
 
 <p>There are 3 ways to attach a DuiHost to the OS — the snippets in each control section <u>do not repeat</u> the host-creation code; refer to one of the three minimal skeletons below:</p>
 
-<h4>① Regular HWND hosting (embed inside a region of a legacy dialog)</h4>
+<h4>① Child window (embedded in a region of an existing dialog)</h4>
 <p>Give <code>DuiHost</code> a parent HWND and it draws inside that HWND's client area. Common scenario: embedding a DUI region inside an existing WTL / MFC dialog.</p>
 <pre><code>balloonwjui::DuiHost host;
 host.Create(parentHwnd, CWindow::rcDefault, _T("Panel"), WS_CHILD | WS_VISIBLE);
@@ -2289,8 +2284,6 @@ host.SetRoot(std::move(root));
   </figure>
   <p>Plain-text single-/multi-line text box with <b>no window of its own</b>. It is a subclass of <a href="#DuiRichEdit">DuiRichEdit</a>: layout, caret, selection, IME, clipboard and context menu all come from the base class (which drives the rich-text layout engine that ships with Windows). This class only adds the semantics a plain text box has on top of a rich text box — Enter does not insert a line break in single-line mode, inline icon gutters on the left and right, a reveal toggle for password fields, and vertical centering of single-line text.</p>
 
-  <p class="note"><b><code>DuiEditHost</code> is the retained compatibility name.</b> That class name used to denote a control that embedded a real Win32 text box child window; once the text box went windowless on 2026-08-17, it degenerated into a thin shell over <code>DuiEdit</code> (adding only a placeholder-visibility switch) so that existing call sites keep compiling unchanged. The two are the same control, and everything in this section applies to both. <b>New code should always use <code>DuiEdit</code> directly.</b></p>
-
   <h4>What going windowless changed</h4>
   <table>
     <tr><th>Capability</th><th>Why it holds</th></tr>
@@ -2434,7 +2427,7 @@ if (n-&gt;ctrlId == IDC_NICKNAME) {
         <td>Same on the right.</td><td>0</td></tr>
   </table>
 
-  <p class="note"><b>The old notification names are kept as aliases</b>: <code>DuiEditHost::DUIEN_LEFT_ICON_CLICK</code> / <code>DUIEN_RIGHT_ICON_CLICK</code> forward to the two new codes with equal values. The numeric values did change (the new control opened its own range, away from the <code>DUIN_CUSTOM + 1</code> slot a dozen controls already share), but existing code compares the symbols rather than the literal numbers, so it is unaffected. New code should use the new names.</p>
+  <p class="note"><b>These two codes occupy their own range</b>, starting at <code>DUIN_CUSTOM + 80</code> rather than the <code>DUIN_CUSTOM + 1</code> slot a dozen controls in the library already share, which reduces collisions with other controls. Even so, dispatch must still test <code>ctrlId</code> alongside <code>code</code>, never <code>code</code> on its own.</p>
 
   <p class="note"><b>Interaction with the password reveal toggle (<code>SetShowEyeToggle</code>)</b>: the right icon and the reveal toggle share the region on the right. When <code>password=true</code> and <code>SetShowEyeToggle(true)</code>, the right icon steps aside entirely — it is neither drawn nor hit-tested, and no right-icon click notification is fired. The left icon is unaffected and can coexist with the toggle.</p>
 
@@ -2566,7 +2559,7 @@ void MyEdit::OnBuildContextMenu(std::vector&lt;balloonwjui::DuiRichEditMenuItem&
   </figure>
   <p>Compact search box with a magnifier icon + placeholder. Fires <code>DUIN_VALUECHANGED</code> as you type.</p>
 
-  <p class="note"><b>Implementation: a thin preset over the text box</b> — DuiSearchBox <u>inherits</u> from the plain text box (<a href="#DuiEdit">DuiEdit</a>, through the compatibility shell <code>DuiEditHost</code>). Its constructor installs the left magnifier via the <a href="#DuiEdit-IconApi">inline-icon API</a>; on every text change it shows the right-hand clear button when the text is non-empty and hides it when empty; and it intercepts the right-icon click to clear the text in place, so that click never bubbles up to application code. Before this refactor it was ~250 lines of aggregation plus custom painting; afterwards it is ~80 lines. <u>Zero API surface change for callers</u>: <code>SetGlyphStripWidth</code> / <code>SetClearStripWidth</code> / <code>IsClearShowing</code> / <code>GetClearRect</code> / <code>GetEdit</code> all retain their semantics (<code>GetEdit</code> returns <code>this</code>, because this class <u>is</u> the text box).</p>
+  <p class="note"><b>Implementation: a thin preset over the text box</b> — DuiSearchBox <u>inherits</u> directly from the plain text box (<a href="#DuiEdit">DuiEdit</a>). Its constructor installs the left magnifier via the <a href="#DuiEdit-IconApi">inline-icon API</a>; on every text change it shows the right-hand clear button when the text is non-empty and hides it when empty; and it intercepts the right-icon click to clear the text in place, so that click never bubbles up to application code. Before this refactor it was ~250 lines of aggregation plus custom painting; afterwards it is ~80 lines. <u>Zero API surface change for callers</u>: <code>SetGlyphStripWidth</code> / <code>SetClearStripWidth</code> / <code>IsClearShowing</code> / <code>GetClearRect</code> / <code>GetEdit</code> all retain their semantics (<code>GetEdit</code> returns <code>this</code>, because this class <u>is</u> the text box).</p>
 
   <p><b>Typical parent:</b> any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). Attach it and it works — there is no extra creation step. Common placement: at the top of a contact / file list.</p>
 
@@ -6569,7 +6562,7 @@ frame.ShowWindow(nCmdShow);
 
 <h2 id="feature-strip">12. Feature Strip (compile-time tree-shaking)</h2>
 
-<p>balloonui ships 31 controls + an XML builder (<code>DuiEditHost</code> is the compatibility name of <code>DuiEdit</code> — the same control, not counted twice). In real projects, however, most apps use only a subset (a chat client may not need <code>DuiTreeView</code>, a utility app may not need <code>DuiEmojiPanel</code>, and so on). This section describes how to use <u>preprocessor macros</u> to exclude unused controls from compilation, shrinking the final <code>balloonui.dll</code> / <code>.lib</code>.</p>
+<p>balloonui ships 31 controls + an XML builder. In real projects, however, most apps use only a subset (a chat client may not need <code>DuiTreeView</code>, a utility app may not need <code>DuiEmojiPanel</code>, and so on). This section describes how to use <u>preprocessor macros</u> to exclude unused controls from compilation, shrinking the final <code>balloonui.dll</code> / <code>.lib</code>.</p>
 
 <h3>12.1 How it works</h3>
 
@@ -6592,7 +6585,7 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>BUI_DISABLE_BADGE</code></td><td>DuiBadge</td><td><code>&lt;badge&gt;</code> XML disabled</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_SEPARATOR</code></td><td>DuiSeparator</td><td><code>&lt;separator&gt;</code> XML disabled</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_GROUPBOX</code></td><td>DuiGroupBox</td><td><code>&lt;groupbox&gt;</code> XML disabled</td><td>—</td></tr>
-  <tr><td><code>BUI_DISABLE_EDIT</code></td><td>DuiEdit (and its compatibility shell DuiEditHost)</td><td><code>&lt;edit&gt;</code> XML disabled</td><td>SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW</td></tr>
+  <tr><td><code>BUI_DISABLE_EDIT</code></td><td>DuiEdit</td><td><code>&lt;edit&gt;</code> XML disabled</td><td>SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW</td></tr>
   <tr><td><code>BUI_DISABLE_IMAGEOLE</code></td><td>CDuiImageOle</td><td>Inline images in RichEdit unavailable</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_RICHTEXT</code></td><td>DuiRichEdit / DuiTextHost / DuiTextServices</td><td><code>&lt;richtext&gt;</code> XML disabled; the library retains no text editing capability at all</td><td>EDIT must be turned off <u>as well</u> (see below)</td></tr>
   <tr><td><code>BUI_DISABLE_SEARCHBOX</code></td><td>DuiSearchBox</td><td><code>&lt;searchbox&gt;</code> XML disabled</td><td>—</td></tr>
@@ -6621,6 +6614,7 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>BUI_DISABLE_FRAMEWINDOW</code></td><td>DuiFrameWindow</td><td><code>&lt;frame-window&gt;</code> + <code>FromFrameXml</code> disabled</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_XMLBUILDER</code></td><td>DuiXmlBuilder</td><td><code>FromString</code> / <code>FromFrameXml</code> disabled (you must hand-write a C++ AddChild chain)</td><td>—</td></tr>
 </table>
+
 
 <p>The "dependents" column means: turning off this row's feature automatically also turns off these upstream features. For example, <code>BUI_DISABLE_EDIT</code> also removes SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW (because they all embed a text box). The file enforces this with <code>#if !defined(BUI_DISABLE_X) &amp;&amp; defined(BUI_FEATURE_DEP)</code> chains.</p>
 

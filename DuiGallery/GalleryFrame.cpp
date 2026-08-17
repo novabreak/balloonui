@@ -45,7 +45,6 @@
 #include "../balloonui/Tests/DuiInspectorGoldenTests.h"
 #include "../balloonui/Tests/DuiComboBoxTests.h"
 #include "../balloonui/Tests/DuiLabelTests.h"
-#include "../balloonui/Tests/DuiEditHostTests.h"
 #include "../balloonui/Tests/DuiEditTests.h"
 #include "../balloonui/Tests/DuiSearchBoxTests.h"
 #include "../balloonui/Tests/DuiLayoutTests.h"
@@ -251,16 +250,8 @@ void GalleryFrame::BuildRoot()
 
     m_host.SetRoot(std::move(root));
 
-    // 导航栏内部的控件要等整棵树挂上宿主之后再建。SetRoot 会把宿主指针
-    // 递归设给每一个控件，此时新建的搜索框与页面树才能立刻拿到宿主。
-    m_pNav->BuildContents();
-
-    // 建完之后必须自己触发一次排列。添加子控件只是把它挂进列表，不会
-    // 重新排版，新加的控件会停在零矩形上、什么都画不出来。窗口刚创建时
-    // 随后而来的 WM_SIZE 会顺带把这件事做了，但切换语言或主题时是就地
-    // 重建、没有尺寸变化，不显式排一次左侧导航栏就是空白的。
-    // 用 ForceLayout 而不是 SetRect：后者在矩形没有变化时直接返回，而这里
-    // 恰恰是矩形没变、变的是子控件。
+    // 切换语言或主题时是就地重建，客户区尺寸没有变化，不会有 WM_SIZE 顺带
+    // 把版重排一次，所以这里显式排一次。
     RelayoutRoot();
 }
 
@@ -480,7 +471,6 @@ void GalleryFrame::RunAllTests()
     report += _T("\r\n");
     report += DuiLabelTests::RunAll();
     report += _T("\r\n");
-    report += DuiEditHostTests::RunAll();
     report += _T("\r\n");
     // 无窗口普通输入框被裁掉时，这套用例整个不存在，连同它的 RunAll 一起
     // 消失，所以调用点也要跟着裁。

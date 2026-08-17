@@ -13,7 +13,7 @@
 #include "Controls/Basic/DuiAvatar.h"
 #include "Controls/Basic/DuiLabel.h"
 #include "Controls/Input/DuiSwitch.h"
-#include "Controls/Input/DuiEditHost.h"
+#include "Controls/Input/DuiEdit.h"
 #include "Controls/Window/DuiScrollBar.h"
 #include "Controls/Layout/DuiLayout.h"
 #include "Controls/List/DuiListBox.h"
@@ -2209,22 +2209,12 @@ void XChatMainFrame::LoadMainXml(LPCTSTR xmlName)
     // ApplySessionView 内部 FindCtrlById 拿 nullptr 就直接返回，无副作用。
     ApplySessionView(0);
 
-    // 真 EDIT HWND-hosted 控件需 caller 在 host HWND 就绪后调 EnsureCreated。
-    // builder 只构控件树，不会自动 create HWND。Placeholder 由 XML
-    // `placeholder="..."` 属性指定，DuiEditHost 内部走 EM_SETCUEBANNER。
-    //   id=60  ：左侧顶部搜索框
-    //   id=400 ：底部聊天输入框
-    if (auto* root = GetClientContent())
-    {
-        if (auto* search = dynamic_cast<DuiEditHost*>(root->FindCtrlById(60)))
-        {
-            search->EnsureCreated(m_hWnd);
-        }
-        if (auto* input = dynamic_cast<DuiEditHost*>(root->FindCtrlById(400)))
-        {
-            input->EnsureCreated(m_hWnd);
-        }
-    }
+    // 输入框是无窗口控件，由 builder 构造出来就能直接使用，没有额外的创建步骤。
+    // 占位文字由 XML 的 placeholder 属性指定，控件自己绘制。
+    //
+    // 2026-08-17 之前这里还要按控件编号找到两个输入框（id=60 左侧顶部搜索框、
+    // id=400 底部聊天输入框），在宿主窗口就绪之后各调一次创建方法把内部的
+    // Win32 子窗口建出来；输入框改为无窗口实现之后这一步连同那个方法一并删除。
 }
 
 void XChatMainFrame::ApplySessionView(int sessionIdx)

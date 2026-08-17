@@ -4,7 +4,7 @@
 #if BUI_FEATURE_COMBOBOX
 
 #include "../List/DuiListBox.h"
-#include "DuiEditHost.h"
+#include "DuiEdit.h"
 #include "../../DuiHost.h"
 #include "../../DuiResMgr.h"
 #include "../../DuiNotify.h"
@@ -16,7 +16,7 @@ namespace {
 
 // Combo body fill / border colors. The body is rounded with kCornerPx and
 // the border tracks input state so the user can see hover / open / focus
-// the same way DuiEditHost does. Disabled drops to a muted gray.
+// the same way DuiEdit does. Disabled drops to a muted gray.
 const COLORREF kBgDisabled     = RGB(240, 240, 240);   // flat light gray
 const COLORREF kBorderDisabled = RGB(190, 190, 190);   // muted gray
 const COLORREF kBorderActive   = RGB( 80, 130, 200);   // hover OR popup-open
@@ -146,7 +146,7 @@ RECT ClampPopupToWorkArea(const RECT& comboScreen, int popupW, int popupH,
 // 个控件上从源头关闭。该开关不影响下面这些内部钩子，下拉框照常能感知输入框内部
 // 的变化。
 // ---------------------------------------------------------------------------
-class DuiComboEdit : public DuiEditHost
+class DuiComboEdit : public DuiEdit
 {
 public:
     // 记下宿主下拉框，供下面的内部钩子回调。
@@ -160,14 +160,14 @@ public:
     //   返回：基类的处理结果（不消费该事件）。
     bool OnSetFocus() override
     {
-        return DuiEditHost::OnSetFocus();
+        return DuiEdit::OnSetFocus();
     }
 
     // 失去焦点，理由同 OnSetFocus。
     //   返回：基类的处理结果（不消费该事件）。
     bool OnKillFocus() override
     {
-        return DuiEditHost::OnKillFocus();
+        return DuiEdit::OnKillFocus();
     }
 
 protected:
@@ -175,7 +175,7 @@ protected:
     // 窗口化之前由系统转发文字变化通知的行为一致。
     void OnTextChanged() override
     {
-        DuiEditHost::OnTextChanged();
+        DuiEdit::OnTextChanged();
         if (m_combo != nullptr)
         {
             m_combo->OnEditTextChanged();

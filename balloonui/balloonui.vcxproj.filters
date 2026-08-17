@@ -95,8 +95,6 @@
     <ClCompile Include="Controls\Basic\DuiGroupBox.cpp">   <Filter>Controls\Basic</Filter></ClCompile>
 
     <!-- ============== Controls / Input ============== -->
-    <ClInclude Include="Controls\Input\DuiEditHost.h">     <Filter>Controls\Input</Filter></ClInclude>
-    <ClCompile Include="Controls\Input\DuiEditHost.cpp">   <Filter>Controls\Input</Filter></ClCompile>
     <ClInclude Include="Controls\Input\EditContextMenu.h"> <Filter>Controls\Input</Filter></ClInclude>
     <ClInclude Include="Controls\Input\DuiTextServices.h"> <Filter>Controls\Input</Filter></ClInclude>
     <ClCompile Include="Controls\Input\DuiTextServices.cpp"><Filter>Controls\Input</Filter></ClCompile>

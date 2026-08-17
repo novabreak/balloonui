@@ -206,7 +206,6 @@
     <ClCompile Include="Controls\Basic\DuiSeparator.cpp" />
     <ClCompile Include="Controls\Basic\DuiGroupBox.cpp" />
     <!-- Controls / Input -->
-    <ClCompile Include="Controls\Input\DuiEditHost.cpp" />
     <ClCompile Include="Controls\Input\DuiTextServices.cpp" />
     <ClCompile Include="Controls\Input\DuiTextHost.cpp" />
     <ClCompile Include="Controls\Input\DuiEdit.cpp" />
@@ -284,7 +283,6 @@
     <ClInclude Include="Controls\Basic\DuiSeparator.h" />
     <ClInclude Include="Controls\Basic\DuiGroupBox.h" />
     <!-- Controls / Input -->
-    <ClInclude Include="Controls\Input\DuiEditHost.h" />
     <ClInclude Include="Controls\Input\EditContextMenu.h" />
     <ClInclude Include="Controls\Input\DuiTextServices.h" />
     <ClInclude Include="Controls\Input\DuiTextHost.h" />

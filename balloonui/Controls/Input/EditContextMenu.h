@@ -3,14 +3,18 @@
  *
  *  根据文本框当前状态（是否只读 / 有无选区 / 剪贴板有无文本 / 有无文本 /
  *  是否密码框）算出右键菜单该有哪些项、各项是否可用（灰显）。抽成无副作用
- *  的纯函数，是为了能脱离真 HWND 单元测试 —— DuiEditHost 的 WM_CONTEXTMENU
- *  子类过程在运行期读取自身状态后调用本函数，再据返回的模型构建 DuiMenu
- *  弹出。
+ *  的纯函数，是为了能脱离窗口与消息循环做单元测试 —— 真正弹出菜单的那一步
+ *  是同步阻塞的，测试里不能真弹。
  *
  *  本文件刻意不依赖 DuiMenu、也不碰任何 Win32 资源，只产出"模型 + 文案"，
  *  让"算什么菜单"与"怎么弹菜单"彻底分开。
  *
- *  典型用法（见 DuiEditHost.cpp 的 ShowContextMenu）：
+ *  这份模型最初服务的是早先内嵌真 Win32 输入框子窗口的输入框实现，由该子窗口
+ *  的 WM_CONTEXTMENU 处理调用；那条实现路径已经删除。库内现在的输入框控件
+ *  DuiEdit 继承自富文本控件 DuiRichEdit，用的是同目录另一份模型
+ *  RichEditContextMenu.h。本文件目前只由库外的调用方与单元测试使用。
+ *
+ *  典型用法：
  *      EditContextState st;
  *      st.m_readOnly = ...;            // 从控件自身状态填
  *      st.m_hasSelection = ...;
@@ -26,10 +30,8 @@
 #pragma once
 
 #include "../../BalloonUiFeatures.h"
-// 只随 EDIT 一起裁剪。本文件早先还判过一个 BUI_FEATURE_RICHEDIT ——
-// 那是寄宿真子窗口的旧富文本控件的开关，该控件已整体删除；如今的无窗口
-// 富文本控件 DuiRichEdit 用的是另一份菜单模型 RichEditContextMenu.h，
-// 与本文件无关。
+// 只随 EDIT 一起裁剪。富文本控件 DuiRichEdit 用的是另一份菜单模型
+// RichEditContextMenu.h，与本文件无关。
 #if defined(BUI_FEATURE_EDIT)
 
 #include <vector>

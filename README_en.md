@@ -79,10 +79,8 @@ Enter does not insert a line break in single-line mode, inline icon gutters
 on the left and right, a password reveal toggle, and vertical centering of
 single-line text.
 
-The old class name `DuiEditHost` is kept as a compatibility shell over
-`DuiEdit` so existing code compiles unchanged; new code should use
-`DuiEdit` directly. `DuiSearchBox`, `DuiSpinBox`, and `DuiComboBox` are
-composite controls built on top of the text box.
+`DuiSearchBox`, `DuiSpinBox`, and `DuiComboBox` are composite controls
+built on top of the text box.
 
 ![Edit states](docs/images/ctl-edit-states.png)
 ![SearchBox states](docs/images/ctl-searchbox-states.png)

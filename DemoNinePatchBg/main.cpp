@@ -29,7 +29,7 @@
 #include "Controls/Basic/DuiLabel.h"
 #include "Controls/Basic/DuiButton.h"
 #include "Controls/Basic/DuiAvatar.h"
-#include "Controls/Input/DuiEditHost.h"
+#include "Controls/Input/DuiEdit.h"
 #include "Controls/Window/DuiFrameWindow.h"
 
 #include <atlcrack.h>
@@ -235,7 +235,7 @@ static std::unique_ptr<DuiControl> BuildBuddyInfoContent()
         l->SetText(label);
         l->SetTextColor(RGB( 80,  80,  80));
         l->SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        auto e = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+        auto e = std::unique_ptr<DuiEdit>(new DuiEdit());
         e->SetText(text);
         row->AddChild(std::move(l), DuiLayout::Hint().Fixed(72));
         row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));

@@ -11,24 +11,10 @@ DuiSpinBox::DuiSpinBox()
 {
     SetTabStop(false);
 
-    auto e = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    auto e = std::unique_ptr<DuiEdit>(new DuiEdit());
     m_edit = e.get();
     AddChild(std::move(e));
     PushValueToEdit();
-}
-
-bool DuiSpinBox::EnsureCreated(HWND hwndParent)
-{
-    if (!m_edit)
-    {
-        return false;
-    }
-    bool ok = m_edit->EnsureCreated(hwndParent);
-    if (ok)
-    {
-        PushValueToEdit();
-    }
-    return ok;
 }
 
 void DuiSpinBox::SetRange(int minV, int maxV)

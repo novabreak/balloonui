@@ -6,7 +6,7 @@
 #include "Controls/Layout/DuiLayout.h"
 #include "Controls/Basic/DuiLabel.h"
 #include "Controls/Basic/DuiAvatar.h"
-#include "Controls/Input/DuiEditHost.h"
+#include "Controls/Input/DuiEdit.h"
 #include "../Controls/PaintHelpers.h"
 #include "DuiPaintAA.h"
 #include "DuiNotify.h"
@@ -28,7 +28,7 @@ static const int kAvatarDiameter = 28;
 // =========================================================================
 // SearchPill —— TopBar 搜索框（pill 胶囊 + 左侧放大镜 + 真 EDIT 输入）
 //
-// 用 balloonui 新加的 DuiEditHost 内联图标 + 底色 + 无边框 API 实现：
+// 用 balloonui 新加的 DuiEdit 内联图标 + 底色 + 无边框 API 实现：
 //   - SetBgColor(浅灰)：EDIT 底色 = pill 灰，"EDIT 框样式不明显"
 //   - SetShowBorder(false)：去掉 EDIT 默认 1px 边框，避免压在 pill 圆角上
 //   - SetIcon(LeftIcon, 32, 放大镜 painter)：左 gutter 内画 GDI+ 抗锯齿放大镜
@@ -48,14 +48,14 @@ public:
         SetGap(0);
         SetPadding(0, 0, 0, 0);
 
-        auto edit = std::make_unique<DuiEditHost>();
+        auto edit = std::make_unique<DuiEdit>();
         edit->SetPlaceholder(_T("搜索音乐、视频、播客..."));
         edit->SetBgColor(kPillBg);
         edit->SetShowBorder(false);
         edit->SetMargins(0, 0, 8, 0);
         // 左 gutter 32px，里面画 GDI+ 抗锯齿放大镜。clickable=false：放大镜
         // 是装饰，鼠标穿透到 EDIT 设 caret。
-        edit->SetIcon(DuiEditHost::LeftIcon, 32,
+        edit->SetIcon(DuiEdit::LeftIcon, 32,
             [](HDC hdc, const RECT& rc)
             {
                 // 整体图标视觉中心要与 EDIT 文字水平中线一致。

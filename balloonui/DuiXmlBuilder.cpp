@@ -16,7 +16,7 @@
 #  include "Controls/Basic/DuiLabel.h"
 #endif
 #if BUI_FEATURE_EDIT
-#  include "Controls/Input/DuiEditHost.h"
+#  include "Controls/Input/DuiEdit.h"
 #endif
 #if BUI_FEATURE_FRAMEWINDOW
 #  include "Controls/Window/DuiFrameWindow.h"    // DuiFrameWindowConfig 完整类型 — FromFrameXml 写字段
@@ -733,12 +733,8 @@ std::unique_ptr<DuiControl> BuildLabel(const DuiXmlBuilder::Node& n)
 #if BUI_FEATURE_EDIT
 std::unique_ptr<DuiControl> BuildEdit(const DuiXmlBuilder::Node& n)
 {
-    // 这里刻意建的是兼容外壳 DuiEditHost 而不是控件本体 DuiEdit。存量代码里
-    // 有大量 dynamic_cast<DuiEditHost*> 去取 XML 里建出来的输入框，建成本体
-    // 的话这些转换会一律得到空指针 —— 而且是编译期查不出、运行期只表现为
-    // "功能点了没反应"的那种失效。等调用方全部改用 DuiEdit 之后再换。
-    std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-    DuiEditHost* raw = e.get();
+    std::unique_ptr<DuiEdit> e(new DuiEdit());
+    DuiEdit* raw = e.get();
     ApplyCommon(raw, n);
     raw->SetPlaceholder(ToCString(Get(n, "placeholder")));
     if (ParseBool(Get(n, "password"), false))
@@ -766,7 +762,7 @@ std::unique_ptr<DuiControl> BuildEdit(const DuiXmlBuilder::Node& n)
 // 输入框一类的控件（edit / searchbox / spinbox / combobox）：builder 建出来
 // 就能直接用，没有额外的"创建"步骤。2026-08-17 之前它们内嵌真的 Win32 子
 // 窗口，需要调用方在宿主窗口就绪之后自己补一次 EnsureCreated；改成无窗口
-// 实现之后这条约定作废，那个方法只留了个空实现给存量代码。
+// 实现之后这条约定作废，该方法也已经删除。
 // =====================================================================
 
 // ─── 枚举值字符串 → enum 的 helper（COLOR / int / bool 已有通用 parser）─

@@ -51,8 +51,8 @@
          id=50 是 session-list 的 ctrl id，MainFrame WM_DUI_NOTIFY 路由用。 -->
     <color-panel color="245,245,245" fixedWidth="290" padding="0,16,0,0" gap="0">
       <hbox fixedHeight="32" gap="8" padding="12,0,12,0">
-        <!-- 真 EDIT。id=60 让 LoadMainXml 末尾 EnsureCreated(m_hWnd)。
-             placeholder="搜索" 在 EDIT 为空且失焦时灰显（DuiEditHost 自己画）。 -->
+        <!-- 输入框。placeholder="搜索" 在内容为空且未获得焦点时以灰字显示，
+             由控件自己绘制。 -->
         <edit id="60" placeholder="搜索" weight="1"/>
         <icon-button glyph="plus" fixedWidth="32"/>
       </hbox>
@@ -87,9 +87,7 @@
             <icon-button glyph="phone-call" fixedWidth="32"/>
             <control weight="1"/>
           </hbox>
-          <!-- 输入框：DuiEditHost (HWND-hosted) 多行 EDIT。
-               id=400 让 LoadMainXml 末尾找到并 EnsureCreated(m_hWnd) —— builder
-               不会自动 create HWND。 -->
+          <!-- 多行输入框。控件由 builder 构造出来即可使用，没有额外的创建步骤。 -->
           <edit id="400" multiline="true" fixedHeight="92"/>
           <hbox fixedHeight="48" gap="0" padding="14,4,14,12">
             <icon-button glyph="phone" fixedWidth="32"/>

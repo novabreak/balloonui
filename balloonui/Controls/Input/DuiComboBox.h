@@ -10,7 +10,7 @@ namespace balloonwjui {
 
 class DuiListBox;
 class DuiComboBoxPopup;
-class DuiEditHost;
+class DuiEdit;
 class DuiComboEdit;
 
 // =================================================================
@@ -65,7 +65,7 @@ RECT ClampPopupToWorkArea(const RECT& comboScreen, int popupW, int popupH,
 //   · StyleReadOnly（默认）：主体自绘，画选中项文本 + 箭头；不可手输入。
 //     等价于 Win32 CBS_DROPDOWNLIST。
 //   · StyleEditable：主体左侧嵌一个无窗口输入框（DuiComboEdit，是
-//     DuiEditHost 子类），右侧 ~20px 是箭头区。可手输入；选 popup 项时
+//     DuiEdit 子类），右侧 ~20px 是箭头区。可手输入；选 popup 项时
 //     把项文本写回该输入框。等价于 Win32 CBS_DROPDOWN。
 //
 // 工作机制：
@@ -144,7 +144,7 @@ public:
     void    SetEditable(bool b);
     bool    IsEditable() const { return m_style == StyleEditable; }
 
-    // ---- 整体底色 / 边框（与 DuiEditHost 同名 API 对齐）----
+    // ---- 整体底色 / 边框（与 DuiEdit 同名 API 对齐）----
 
     // 设置 combo 主体底色。默认 RGB(255,255,255) 白底。editable 模式下
     // 会一并把该色传给内嵌 EDIT，避免主体与 EDIT 内部出现色差。常用于

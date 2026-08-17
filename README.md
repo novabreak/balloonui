@@ -66,9 +66,7 @@ PushButton 默认走品牌蓝 `#2D6CDF` + 8px 圆角，hover / pressed / disable
 控件。`DuiEdit` 在基类之上补齐了普通输入框特有的部分：单行回车不换行、
 左右内联图标栏、密码显隐按钮、单行文字垂直居中。
 
-旧类名 `DuiEditHost` 保留为 `DuiEdit` 的兼容外壳，让存量代码零改动通过
-编译，新代码直接用 `DuiEdit`。SearchBox、SpinBox、ComboBox 都是在输入框
-之上拼装出来的复合控件。
+SearchBox、SpinBox、ComboBox 都是在输入框之上拼装出来的复合控件。
 
 ![Edit 状态](docs/images/ctl-edit-states.png)
 ![SearchBox 状态](docs/images/ctl-searchbox-states.png)

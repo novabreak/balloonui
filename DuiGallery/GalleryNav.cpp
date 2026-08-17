@@ -90,6 +90,15 @@ void GalleryNav::BuildContents()
     tree->SetCtrlId(kIdNavTree);
     tree->SetRowHeight(kTreeRowHeight);
     tree->SetIndentPx(kTreeIndent);
+    // 树控件默认用自己那套浅色配色，并且会把行背景整片填满，所以不给它换色
+    // 的话，切到深色主题时整个左栏仍是亮的、与其余部分割裂。这里逐项换成
+    // 主题里的对应颜色，让导航栏跟着主题走。
+    tree->SetRowBgColor(DuiTheme::Inst().Get(DuiTheme::SurfaceBg));
+    tree->SetTextColor(DuiTheme::Inst().Get(DuiTheme::TextDefault));
+    tree->SetSelTextColor(DuiTheme::Inst().Get(DuiTheme::TextOnRowSel));
+    tree->SetRowSelColor(DuiTheme::Inst().Get(DuiTheme::RowSel));
+    tree->SetRowHoverColor(DuiTheme::Inst().Get(DuiTheme::RowHover));
+    tree->SetGlyphColor(DuiTheme::Inst().Get(DuiTheme::TextSubtle));
     m_pTree = tree.get();
     m_pTreeScroll->SetContent(std::move(tree));
 

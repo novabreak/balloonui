@@ -26,10 +26,10 @@
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 
-// 嵌入 ComCtl32 v6 manifest 依赖 —— 否则 EDIT 控件用的是 v5 风格，
-// EM_SETCUEBANNER 等 Vista+ 消息直接 no-op（DuiEditHost 的 placeholder
-// 走 EM_SETCUEBANNER，没这条 manifest cue 字永远显不出来）。这条
-// pragma 会让 linker 在 PE manifest 里写 dependentAssembly ComCtl32 v6.0.0.0。
+// 嵌入 ComCtl32 v6 manifest 依赖。库里的控件全部是自绘的，本身不依赖它，
+// 但 balloonui 用到的通用控件库函数（子类过程、工具提示等）在 v5 风格下
+// 行为不同。这条 pragma 会让链接器在可执行文件的清单里写下对 ComCtl32
+// 6.0.0.0 的依赖。
 #pragma comment(linker, \
     "/manifestdependency:\"type='win32' " \
     "name='Microsoft.Windows.Common-Controls' version='6.0.0.0' " \

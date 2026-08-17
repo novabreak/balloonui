@@ -8,7 +8,6 @@
 #include "DuiScrollBarTests.h"
 #include "DuiButtonTests.h"
 #include "DuiLabelTests.h"
-#include "DuiEditHostTests.h"
 #include "DuiNinePatchTests.h"
 #include "DuiListBoxTests.h"
 #include "DuiTabTests.h"
@@ -22,7 +21,7 @@
 #include "../Controls/Window/DuiScrollBar.h"
 #include "../Controls/Basic/DuiButton.h"
 #include "../Controls/Basic/DuiLabel.h"
-#include "../Controls/Input/DuiEditHost.h"
+#include "../Controls/Input/DuiEdit.h"
 #include "../Controls/List/DuiListBox.h"
 #include "../Controls/List/DuiTab.h"
 #include "../Controls/Input/DuiComboBox.h"
@@ -74,7 +73,6 @@ int DuiGalleryDlg::OnCreate(LPCREATESTRUCT)
     AppendLog(DuiScrollBarTests::RunAll());
     AppendLog(DuiButtonTests::RunAll());
     AppendLog(DuiLabelTests::RunAll());
-    AppendLog(DuiEditHostTests::RunAll());
     AppendLog(DuiNinePatchTests::RunAll());
     AppendLog(DuiListBoxTests::RunAll());
     AppendLog(DuiTabTests::RunAll());
@@ -409,27 +407,27 @@ void DuiGalleryDlg::BuildKernelSmokeScenario()
     tab->SetCurSel(0, /*notify=*/false);
     m_tab = tab.get();
 
-    // ---- Row 1.3: DuiEditHost parade (single line + password + multi-line) ----
+    // ---- Row 1.3: DuiEdit parade (single line + password + multi-line) ----
     auto rowEdit = std::unique_ptr<DuiHBox>(new DuiHBox());
     rowEdit->SetGap(8);
     DuiHBox* rowEditRaw = rowEdit.get();
 
-    auto eName = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    auto eName = std::unique_ptr<DuiEdit>(new DuiEdit());
     eName->SetCtrlId(130);
     eName->SetPlaceholder(_T("username"));
-    DuiEditHost* eNameRaw = eName.get();
+    DuiEdit* eNameRaw = eName.get();
 
-    auto ePwd = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    auto ePwd = std::unique_ptr<DuiEdit>(new DuiEdit());
     ePwd->SetCtrlId(131);
     ePwd->SetPassword(true);
     ePwd->SetPlaceholder(_T("password"));
-    DuiEditHost* ePwdRaw = ePwd.get();
+    DuiEdit* ePwdRaw = ePwd.get();
 
-    auto eMulti = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    auto eMulti = std::unique_ptr<DuiEdit>(new DuiEdit());
     eMulti->SetCtrlId(132);
     eMulti->SetMultiLine(true);
     eMulti->SetPlaceholder(_T("notes (multi-line, IME, drag to select, etc.)"));
-    DuiEditHost* eMultiRaw = eMulti.get();
+    DuiEdit* eMultiRaw = eMulti.get();
 
     rowEditRaw->AddChild(std::move(eName),  DuiLayout::Hint().Weight(1));
     rowEditRaw->AddChild(std::move(ePwd),   DuiLayout::Hint().Weight(1));
@@ -637,17 +635,10 @@ void DuiGalleryDlg::BuildKernelSmokeScenario()
     // Now that the layout has run and the host is wired, create the actual
     // EDIT HWNDs (their parent is the host's HWND so WM_COMMAND routes back).
     HWND hParent = m_host.m_hWnd;
-    for (int i = 0; i < 3; ++i)
-    {
-        if (m_edits[i])
-        {
-            m_edits[i]->EnsureCreated(hParent);
-            // Re-Layout once more so the freshly-created EDIT picks up its
-            // current rect (EnsureCreated uses m_rcItem at create time, but
-            // SetRect during Layout was called before the HWND existed).
-            m_edits[i]->Layout(m_edits[i]->GetRect());
-        }
-    }
+    // 输入框是无窗口控件，构造完成即可使用，没有需要在宿主窗口就绪之后
+    // 补做的创建步骤。2026-08-17 之前这里要逐个调用创建方法把内部的 Win32
+    // 子窗口建出来、再重新布局一次让新建的子窗口取到当前矩形；该方法已随
+    // 旧实现一并删除。
 }
 
 } // namespace balloonwjui

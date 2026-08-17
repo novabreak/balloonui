@@ -106,7 +106,7 @@ const int kDemoCornerRadius = 6;
 // 返回：标签，所有权交给调用方。
 // 一律带 DT_NOPREFIX：本文件里有大量标签显示的是运行期拼出来的字符串
 // （文件路径、助记符演示的输入串、XML 源码），里面出现 '&' 是正常的，
-// 不关掉 GDI 的助记符解析就会被吃掉一个字符并给后一个字加下划线。
+// 不关掉 GDI 的助记符解析，这个 & 就会被当成标记消耗掉，后一个字符还会被加上下划线。
 std::unique_ptr<DuiLabel> MakeLine(LPCTSTR text, COLORREF color)
 {
     std::unique_ptr<DuiLabel> label(new DuiLabel());
@@ -1340,18 +1340,18 @@ namespace {
 
 // 焦点方块那一行的高度。
 const int kSquareRowH = 60;
-// 每个焦点方块的宽度。
-const int kSquareW = 96;
+// 每个焦点方块的宽度。一行放五个，加上间距要能塞进内容区。
+const int kSquareW = 84;
 // 焦点框对照格子那一行的高度。
 const int kRingRowH = 52;
-// 每个焦点框对照格子的宽度。
-const int kRingCellW = 132;
-// 焦点框对照每一行左侧那个画法名称标签的宽度。
-const int kRingNameW = 216;
+// 每个焦点框对照格子的宽度。一行放四个（四种底色），加上间距要能塞进内容区。
+const int kRingCellW = 120;
 // 助记符表格里「输入字符串」这一列的宽度。
-const int kMnemonicInputW = 172;
-// 助记符表格里两个结果列的宽度。
-const int kMnemonicResultW = 132;
+const int kMnemonicInputW = 150;
+// 助记符表格里 FindChar 结果那一列的宽度。结果最长也就是一个带引号的字符。
+const int kMnemonicFoundW = 90;
+// 助记符表格里 StripPrefix 结果那一列的宽度。
+const int kMnemonicStripW = 110;
 // 助记符演示里真按钮与真标签的宽度。
 const int kMnemonicCtrlW = 168;
 
@@ -1575,20 +1575,13 @@ struct MnemonicCase
 
 // 助记符解析的全部演示用例，含转义、末尾孤立的 '&'、完全没有 '&' 等边界情况。
 const MnemonicCase kMnemonicCases[] = {
-    { _T("&Save"),        _T("普通助记符，取 '&' 后面那个字符"),
-                          _T("plain mnemonic: the char right after '&'") },
-    { _T("Save &As"),     _T("助记符在字符串中间"),
-                          _T("mnemonic in the middle of the string") },
-    { _T("Save && Quit"), _T("只有转义，没有真正的助记符"),
-                          _T("escape only, no real mnemonic") },
-    { _T("&&&Foo"),       _T("前两个 '&' 是转义，第三个才是标记"),
-                          _T("first two '&' escape, the third one marks") },
-    { _T("trailing&"),    _T("末尾孤立的 '&'，后面没有字符可取"),
-                          _T("dangling '&' with nothing after it") },
-    { _T("plain"),        _T("完全没有 '&'"),
-                          _T("no '&' at all") },
-    { _T("保存(&S)"),      _T("中文文案的常见写法，标记放在括号里"),
-                          _T("typical CJK caption: the marker sits in parentheses") },
+    { _T("&Save"),        _T("最常见的写法"),         _T("the common form") },
+    { _T("Save &As"),     _T("标记在字符串中间"),     _T("marker in the middle") },
+    { _T("Save && Quit"), _T("只有转义，没有标记"),   _T("escape only, no marker") },
+    { _T("&&&Foo"),       _T("两个转义 + 一个标记"),  _T("two escapes then a marker") },
+    { _T("trailing&"),    _T("末尾孤立的 '&'"),       _T("dangling '&' at the end") },
+    { _T("plain"),        _T("完全没有 '&'"),         _T("no '&' at all") },
+    { _T("保存(&S)"),      _T("中文文案的常见写法"),   _T("typical CJK caption") },
 };
 
 // 助记符演示用例的条数。
@@ -1774,7 +1767,7 @@ std::unique_ptr<DuiControl> Build_Keyboard()
                    _T("DrawRingThemed 从主题里取品牌色 —— 它在品牌蓝底上同样看不清，这不是缺陷，")
                    _T("而是「焦点色与底色撞了」的正常结果，实际界面里不会把焦点框画在同色底上。\n")
                    _T("还有一件必须如实说明的事：DuiFocusVisual.h 的注释写着 DuiButton / ")
-                   _T("DuiSlider / DuiListBox / DuiEditHost 都在用 DuiFocus，实际并没有 —— ")
+                   _T("DuiSlider / DuiListBox / DuiEdit 都在用 DuiFocus，实际并没有 —— ")
                    _T("库里这几个控件画焦点框走的仍然是 Win32 的 ::DrawFocusRect，")
                    _T("DuiFocus 目前没有任何控件在用。所以这张表左边一列就是你现在按 Tab ")
                    _T("在真按钮上看到的样子。"),
@@ -1789,7 +1782,7 @@ std::unique_ptr<DuiControl> Build_Keyboard()
                    _T("to see on the brand-blue backdrop, which is not a defect but the expected ")
                    _T("result of a focus color colliding with the surface color.\n")
                    _T("One more thing to state plainly: DuiFocusVisual.h claims DuiButton, ")
-                   _T("DuiSlider, DuiListBox and DuiEditHost all use DuiFocus. They do not — ")
+                   _T("DuiSlider, DuiListBox and DuiEdit all use DuiFocus. They do not — ")
                    _T("those controls still call the Win32 ::DrawFocusRect, and DuiFocus has no ")
                    _T("user in the library at all. So the leftmost column is exactly what you ")
                    _T("see today when you Tab onto a real button.")));
@@ -1819,11 +1812,19 @@ std::unique_ptr<DuiControl> Build_Keyboard()
 
         for (int r = 0; r < kRingRowCount; ++r)
         {
+            // 画法名字单独占一行。内容区放不下「名字 + 四个格子」挤在同一行，
+            // 名字另起一行之后四个格子才能都摆得开。
+            if (r > 0)
+            {
+                AddGap(page.get(), kInnerGap);
+            }
+            AddLabelRow(page.get(),
+                        MakeLine(Txt(kRingRows[r].nameZh, kRingRows[r].nameEn),
+                                 kOnLightTextColor),
+                        kTextRowH);
+
             std::unique_ptr<DuiHBox> row(new DuiHBox());
             row->SetGap(kColumnGap);
-            row->AddChild(MakeLine(Txt(kRingRows[r].nameZh, kRingRows[r].nameEn),
-                                   kNoteTextColor),
-                          DuiLayout::Hint().Fixed(kRingNameW));
             for (int c = 0; c < kRingBackdropCount; ++c)
             {
                 std::unique_ptr<FocusRingCell> cell(new FocusRingCell(
@@ -1847,7 +1848,7 @@ std::unique_ptr<DuiControl> Build_Keyboard()
                    _T("一个字面的 '&'，返回可以直接显示给用户的字符串。下表每一行都是现场调 ")
                    _T("这两个函数算出来的，不是写死的期望值。\n")
                    _T("注意表格这几列的标签都关掉了 GDI 的助记符解析（DT_NOPREFIX），")
-                   _T("否则输入字符串里的 '&' 会被 DrawText 自己吃掉，读者看到的就不是真正的 ")
+                   _T("否则输入字符串里的 '&' 会被 DrawText 当成标记消耗掉，读者看到的就不是真正的 ")
                    _T("输入了。"),
                    _T("DuiMnemonic is two pure functions. FindChar returns the lowercase form of ")
                    _T("the character after the first single '&', or 0 when there is none. ")
@@ -1864,9 +1865,9 @@ std::unique_ptr<DuiControl> Build_Keyboard()
         header->AddChild(MakeLine(Txt(_T("输入字符串"), _T("input")), kOnLightTextColor),
                          DuiLayout::Hint().Fixed(kMnemonicInputW));
         header->AddChild(MakeLine(_T("FindChar"), kOnLightTextColor),
-                         DuiLayout::Hint().Fixed(kMnemonicResultW));
+                         DuiLayout::Hint().Fixed(kMnemonicFoundW));
         header->AddChild(MakeLine(_T("StripPrefix"), kOnLightTextColor),
-                         DuiLayout::Hint().Fixed(kMnemonicResultW));
+                         DuiLayout::Hint().Fixed(kMnemonicStripW));
         header->AddChild(MakeLine(Txt(_T("说明"), _T("note")), kOnLightTextColor),
                          DuiLayout::Hint().Weight(1));
         AddVariantRow(page.get(), std::move(header), kTextRowH);
@@ -1899,9 +1900,9 @@ std::unique_ptr<DuiControl> Build_Keyboard()
         row->AddChild(MakeLine(shown, kCodeTextColor),
                       DuiLayout::Hint().Fixed(kMnemonicInputW));
         row->AddChild(MakeLine(foundText, kResultTextColor),
-                      DuiLayout::Hint().Fixed(kMnemonicResultW));
+                      DuiLayout::Hint().Fixed(kMnemonicFoundW));
         row->AddChild(MakeLine(stripped, kResultTextColor),
-                      DuiLayout::Hint().Fixed(kMnemonicResultW));
+                      DuiLayout::Hint().Fixed(kMnemonicStripW));
         row->AddChild(MakeLine(Txt(kMnemonicCases[i].noteZh, kMnemonicCases[i].noteEn),
                                kNoteTextColor),
                       DuiLayout::Hint().Weight(1));
@@ -1998,8 +1999,8 @@ const int kDropResultRowH = 60;
 const int kPreviewRowH = 96;
 // 位图预览控件的宽度。
 const int kPreviewW = 140;
-// 拖放页面上按钮的宽度。两个按钮的文案都不短，取宽一点免得被截断。
-const int kDropButtonW = 320;
+// 拖放页面上按钮的宽度。两个按钮并排放在同一行，加上间距要能塞进内容区。
+const int kDropButtonW = 250;
 
 // 回调时序日志最多保留几行。够看清「进入 → 若干次经过 → 落手 → 离开」
 // 这一整轮就行，再多会把旧的挤得看不清重点。
@@ -2151,7 +2152,7 @@ public:
     }
 
 private:
-    // 现搓一块 CF_HDROP 内存：DROPFILES 头 + 两条以 '\0' 结尾的路径 +
+    // 就地拼出一块 CF_HDROP 内存：DROPFILES 头 + 两条以 '\0' 结尾的路径 +
     // 一个结尾哨兵。布局与资源管理器真拖过来的完全一致。
     // 返回：内存句柄；分配失败时返回空句柄。
     static HGLOBAL BuildHDrop()
@@ -2972,7 +2973,7 @@ const int kImageCellW = 96;
 // 拉伸演示那两个格子的宽度。故意比原图宽很多，四角变形才看得出来。
 const int kStretchCellW = 240;
 // 图片演示行里那几个说明标签的宽度。
-const int kImageLabelW = 152;
+const int kImageLabelW = 140;
 // 字体演示格子那一行的高度。里面竖着摞五行示例文字。
 const int kFontRowH = 148;
 // 资源页面上按钮的宽度。
@@ -3013,6 +3014,8 @@ public:
         DrawNinePart = 2,
         // 灰度化之后的副本，按原始尺寸画在格子正中。
         DrawGray = 3,
+        // 改用库里的 DuiNinePatch 画同一张图，与上一档并排对照。
+        DrawNinePatchModule = 4,
     };
 
     // 构造一个图片演示格子。
@@ -3023,6 +3026,7 @@ public:
     ImageDemoBox(DrawMode mode, LPCTSTR path, int ninePartInset)
         : m_mode(mode)
         , m_path(path != NULL ? path : _T(""))
+        , m_ninePartInset(ninePartInset)
         , m_loaded(false)
     {
         SetTabStop(false);
@@ -3116,6 +3120,19 @@ public:
             m_image.Draw2(hdc, rcTarget);
             break;
 
+        //换库里的 DuiNinePatch 画同一张图。它直接吃 HBITMAP、不依赖皮肤图缓存，
+        //CImage 提供了到 HBITMAP 的转换，所以同一份图片对象两条路都能画。
+        case DrawNinePatchModule:
+            {
+                DuiNinePatch::Insets insets;
+                insets.left = m_ninePartInset;
+                insets.top = m_ninePartInset;
+                insets.right = m_ninePartInset;
+                insets.bottom = m_ninePartInset;
+                DuiNinePatch::Draw(hdc, (HBITMAP)m_image, rcTarget, insets);
+            }
+            break;
+
         //枚举已经穷举完，这里不会走到；留一个空分支避免编译器报缺失分支。
         default:
             break;
@@ -3129,6 +3146,9 @@ private:
     DrawMode m_mode;
     // 图片路径。加载失败时要显示出来，所以留一份。
     CString m_path;
+    // 九宫格四边不参与拉伸的边宽（像素）。DuiNinePatch 那一档每次绘制都要用，
+    // 所以留一份，不像 CImageEx 那样在构造时一次性设进图片对象里。
+    int m_ninePartInset;
     // 图片有没有加载成功。为假时只画说明文字。
     bool m_loaded;
 };
@@ -3691,31 +3711,34 @@ std::unique_ptr<DuiControl> Build_Resource()
                    _T("Nine-part drawing and grayscale built into CImageEx")),
                Txt(_T("CImageEx 在 ATL 的 CImage 上加了三样东西：PNG 加载时做 alpha 预乘、")
                    _T("九宫格绘制（SetNinePart 设四边内距，Draw2 在目标尺寸与原图不同时按九块 ")
-                   _T("画）、以及原地灰度化。下面第一行左边是原图，右边是灰度化之后的副本；")
-                   _T("第二行左边是直接拉伸（四角跟着变形），右边是设过九宫格内距之后再拉伸 ")
-                   _T("（四角保持原样）。\n")
+                   _T("画）、以及原地灰度化。下面第一行是原图与灰度化之后的副本；后面三行是 ")
+                   _T("同一张按钮皮肤图被拉宽到同一个尺寸的三种画法 —— 直接拉伸（四角跟着 ")
+                   _T("变形）、CImageEx 的九宫格（四角保持原样）、以及库里新写的 DuiNinePatch ")
+                   _T("画同一张图，后两行上下对照。\n")
                    _T("注意灰度化改的是图片对象自己的像素，一次性、不可撤销 —— 如果这份图片 ")
                    _T("是从皮肤管理器的缓存里取出来的，那所有共用这份缓存的地方都会跟着变灰。")
-                   _T("所以这四个格子各自直接用 CImageEx 加载了一份自己的副本，没有走缓存。\n")
+                   _T("所以这几个格子各自直接用 CImageEx 加载了一份自己的副本，没有走缓存。\n")
                    _T("库里的新代码画九宫格已经改用 DuiNinePatch 了，理由写在它的头文件里："),
                    _T("CImageEx adds three things on top of ATL's CImage: alpha premultiplication ")
                    _T("when loading PNGs, nine-part drawing (SetNinePart sets the four insets, ")
                    _T("Draw2 splits into nine pieces whenever the destination size differs from ")
                    _T("the source), and in-place grayscaling. The first row below shows the ")
-                   _T("original on the left and a grayscaled copy on the right; the second row ")
-                   _T("shows a plain stretch on the left (corners distort) and a nine-part ")
-                   _T("stretch on the right (corners stay intact).\n")
+                   _T("original next to a grayscaled copy; the three rows after it stretch one ")
+                   _T("button skin to the same size three ways — a plain stretch (corners ")
+                   _T("distort), CImageEx's nine-part path (corners stay intact), and the ")
+                   _T("library's newer DuiNinePatch drawing the very same bitmap, so the last ")
+                   _T("two can be compared directly.\n")
                    _T("Note that grayscaling rewrites the image object's own pixels — one way, ")
                    _T("no undo. If that image came out of the skin manager's cache, every other ")
-                   _T("user of the same cache entry turns gray with it. That is why these four ")
-                   _T("cells each load their own copy directly through CImageEx instead of ")
-                   _T("going through the cache.\n")
+                   _T("user of the same cache entry turns gray with it. That is why these cells ")
+                   _T("each load their own copy directly through CImageEx instead of going ")
+                   _T("through the cache.\n")
                    _T("New code in the library draws nine-patch bitmaps with DuiNinePatch ")
                    _T("instead; the reasons are stated in its header:")));
     {
         std::unique_ptr<DuiLabel> reason = MakeBlock(
             Txt(_T("一、CImageEx 绑死了磁盘图片缓存，单元测试里没法用；DuiNinePatch 直接吃 ")
-                _T("HBITMAP，测试可以现搓一张位图画完再逐像素检查。\n")
+                _T("HBITMAP，测试里可以临时合成一张位图，画完再逐像素检查。\n")
                 _T("二、老版只支持拉伸；DuiNinePatch 保留了绘制模式这个维度，将来加平铺 ")
                 _T("不必改接口。此外它还支持源内距与目标内距分开指定，")
                 _T("可以把源图上很高的装饰带压成较矮的标题栏。"),
@@ -3733,7 +3756,7 @@ std::unique_ptr<DuiControl> Build_Resource()
         std::unique_ptr<DuiHBox> row(new DuiHBox());
         row->SetGap(kRowGap);
         row->AddChild(MakeLine(Txt(_T("原图"), _T("original")), kNoteTextColor),
-                      DuiLayout::Hint().Fixed(kImageCellW));
+                      DuiLayout::Hint().Fixed(kImageLabelW));
         row->AddChild(std::unique_ptr<DuiControl>(new ImageDemoBox(
                           ImageDemoBox::DrawOriginal, kFaceImagePath, kNinePartInset)),
                       DuiLayout::Hint().Fixed(kImageCellW));
@@ -3751,14 +3774,39 @@ std::unique_ptr<DuiControl> Build_Resource()
         std::unique_ptr<DuiHBox> row(new DuiHBox());
         row->SetGap(kRowGap);
         row->AddChild(MakeLine(Txt(_T("直接拉伸"), _T("plain stretch")), kNoteTextColor),
-                      DuiLayout::Hint().Fixed(kImageCellW));
+                      DuiLayout::Hint().Fixed(kImageLabelW));
         row->AddChild(std::unique_ptr<DuiControl>(new ImageDemoBox(
                           ImageDemoBox::DrawStretched, kButtonImagePath, kNinePartInset)),
                       DuiLayout::Hint().Fixed(kStretchCellW));
-        row->AddChild(MakeLine(Txt(_T("九宫格拉伸"), _T("nine-part stretch")), kNoteTextColor),
+        row->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
+                      DuiLayout::Hint().Weight(1));
+        AddVariantRow(page.get(), std::move(row), kImageRowH);
+    }
+    AddGap(page.get(), kInnerGap);
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(kRowGap);
+        row->AddChild(MakeLine(Txt(_T("九宫格拉伸（CImageEx）"),
+                                   _T("nine-part (CImageEx)")), kNoteTextColor),
                       DuiLayout::Hint().Fixed(kImageLabelW));
         row->AddChild(std::unique_ptr<DuiControl>(new ImageDemoBox(
                           ImageDemoBox::DrawNinePart, kButtonImagePath, kNinePartInset)),
+                      DuiLayout::Hint().Fixed(kStretchCellW));
+        row->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
+                      DuiLayout::Hint().Weight(1));
+        AddVariantRow(page.get(), std::move(row), kImageRowH);
+    }
+    AddGap(page.get(), kInnerGap);
+    {
+        // 同一张图、同一组内距，换成库里的 DuiNinePatch 再画一遍，与上一行
+        // 上下对照看效果有没有差别。
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(kRowGap);
+        row->AddChild(MakeLine(Txt(_T("九宫格拉伸（DuiNinePatch）"),
+                                   _T("nine-part (DuiNinePatch)")), kNoteTextColor),
+                      DuiLayout::Hint().Fixed(kImageLabelW));
+        row->AddChild(std::unique_ptr<DuiControl>(new ImageDemoBox(
+                          ImageDemoBox::DrawNinePatchModule, kButtonImagePath, kNinePartInset)),
                       DuiLayout::Hint().Fixed(kStretchCellW));
         row->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
                       DuiLayout::Hint().Weight(1));
@@ -3770,7 +3818,7 @@ std::unique_ptr<DuiControl> Build_Resource()
                Txt(_T("共享字体缓存与 DPI 变化"), _T("The shared font cache and DPI changes")),
                Txt(_T("DuiResMgr 把字体按「磅值 + 粗细」缓存起来，同一组参数无论要多少次拿到的 ")
                    _T("都是同一个句柄。这解决的是句柄泄漏：控件想要一个非默认字号的字体，")
-                   _T("如果各自 CreateFontIndirect，用一次漏一个。拿到的句柄一律不要 ")
+                   _T("如果各自 CreateFontIndirect，每用一次就泄漏一个句柄。拿到的句柄一律不要 ")
                    _T("DeleteObject，所有权在管理器手里。\n")
                    _T("宿主收到系统的 DPI 变化消息时会调 SetDpi，管理器把默认字体与整张缓存 ")
                    _T("一起清空、下次再要时按新 DPI 重建。下面的按钮就是模拟这一步。\n")

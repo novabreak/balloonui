@@ -36,7 +36,7 @@ struct DuiFrameWindowConfig;
 //   vbox / hbox / grid          — DuiVBox / DuiHBox / DuiGrid
 //   label                       — DuiLabel
 //   button                      — DuiButton
-//   edit                        — DuiEditHost
+//   edit                        — DuiEdit
 //
 // Common attributes:
 //   id          — UINT, sets ctrlId
@@ -53,8 +53,8 @@ struct DuiFrameWindowConfig;
 // Per-control attributes:
 //   text        — DuiLabel::SetText, DuiButton::SetText
 //   textColor   — "r,g,b" → COLORREF
-//   placeholder — DuiEditHost::SetPlaceholder
-//   password    — "true"/"false" → DuiEditHost::SetPassword
+//   placeholder — DuiEdit::SetPlaceholder
+//   password    — "true"/"false" → DuiEdit::SetPassword
 //   multiline   — "true"/"false"
 //   buttonType  — "push"/"icon"/"checkbox"/"radio"
 //

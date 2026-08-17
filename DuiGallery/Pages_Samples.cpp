@@ -19,7 +19,7 @@
 
 #include "DuiXmlBuilder.h"
 #include "Controls/Basic/DuiAvatar.h"
-#include "Controls/Input/DuiEditHost.h"
+#include "Controls/Input/DuiEdit.h"
 #include "Controls/Input/DuiSearchBox.h"
 #include "Controls/Input/DuiComboBox.h"
 #include "Controls/List/DuiListBox.h"
@@ -404,11 +404,11 @@ std::unique_ptr<DuiControl> BuildLayoutLogin()
     subTitle->SetTextAlign(DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     card->AddChild(std::move(subTitle), DuiLayout::Hint().Fixed(kLoginSubTitleH));
 
-    std::unique_ptr<DuiEditHost> userEdit(new DuiEditHost());
+    std::unique_ptr<DuiEdit> userEdit(new DuiEdit());
     userEdit->SetPlaceholder(Txt(_T("用户名 / 邮箱"), _T("Username / email")));
     card->AddChild(std::move(userEdit), DuiLayout::Hint().Fixed(kLoginFieldH));
 
-    std::unique_ptr<DuiEditHost> passwordEdit(new DuiEditHost());
+    std::unique_ptr<DuiEdit> passwordEdit(new DuiEdit());
     passwordEdit->SetPlaceholder(Txt(_T("密码"), _T("Password")));
     passwordEdit->SetPassword(true);
     card->AddChild(std::move(passwordEdit), DuiLayout::Hint().Fixed(kLoginFieldH));
@@ -457,7 +457,7 @@ std::unique_ptr<DuiHBox> MakeFormRow(LPCTSTR labelText, LPCTSTR placeholder)
     label->SetTextColor(kFieldLabelColor);
     label->SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
-    std::unique_ptr<DuiEditHost> edit(new DuiEditHost());
+    std::unique_ptr<DuiEdit> edit(new DuiEdit());
     if (placeholder != NULL)
     {
         edit->SetPlaceholder(placeholder);
@@ -737,7 +737,7 @@ std::unique_ptr<DuiControl> Build_LoginXml()
         sourceHeader->SetTextColor(kPaneHeaderColor);
         sourceBox->AddChild(std::move(sourceHeader), DuiLayout::Hint().Fixed(kXmlPaneHeaderH));
 
-        std::unique_ptr<DuiEditHost> source(new DuiEditHost());
+        std::unique_ptr<DuiEdit> source(new DuiEdit());
         source->SetMultiLine(true);
         source->SetReadOnly(true);
         source->SetText(Utf8ToCString(PickLoginXml()));

@@ -5,12 +5,12 @@
 
 // .cpp 必须先 include stdafx.h（项目 PCH 约定）。
 #include "../../DuiControl.h"
-#include "DuiEditHost.h"
+#include "DuiEdit.h"
 
 namespace balloonwjui {
 
 // =================================================================
-// DuiSpinBox —— 整数微调输入（HWND-hosted）
+// DuiSpinBox —— 整数微调输入
 // =================================================================
 //
 // 用途：让用户输入一个有范围的整数（端口号、年龄、缩放百分比、……），
@@ -20,14 +20,13 @@ namespace balloonwjui {
 //   [ EDIT 区，weight=1 ]  [ ▲ ▼ 按钮条，宽 18px，▲ 上半 / ▼ 下半 ]
 //
 // 工作机制：
-//   · 复合控件 = 一个 DuiEditHost（左侧真 EDIT）+ 自绘的 ▲▼ 按钮条
-//     （右侧）。EDIT 是 HWND，必须在 host HWND 就绪后调
-//     EnsureCreated(hostHwnd) 一次才会创建出来。
+//   · 复合控件 = 一个 DuiEdit（左侧输入框）+ 自绘的 ▲▼ 按钮条（右侧）。
+//     输入框是无窗口控件，构造完成即可使用，没有额外的创建步骤。
 //   · SetValue 自动 clamp 到 [min, max]（或 SetWrap(true) 时回绕），
 //     同时把新值文本推到 EDIT。
-//   · 用户在 EDIT 里手输入后，<u>不会</u>自动同步到 m_value —— 由 caller
-//     在 EDIT 的 EN_KILLFOCUS 时自己 SetValue(_ttoi(GetEdit()->GetText()))
-//     提交。
+//   · 用户在输入框里手工输入后，<u>不会</u>自动同步到 m_value —— 由调用方
+//     在输入框失去焦点（DUIN_KILLFOCUS）时自己调
+//     SetValue(_ttoi(GetEdit()->GetText())) 提交。
 //   · ▲ / ▼ 半区点击 = StepBy(±step) 并发 DUIN_VALUECHANGED。
 //   · 自身不参与 tab；内部 EDIT 是 tab stop。hit-test 把 EDIT 区域转给
 //     EDIT 子控件（让光标 / 选择 / IME 行为原生）。
@@ -41,7 +40,6 @@ namespace balloonwjui {
 //     spin->SetCtrlId(IDC_PORT);
 //     DuiSpinBox* raw = spin.get();
 //     parent->AddChild(std::move(spin));
-//     raw->EnsureCreated(host->m_hWnd);
 //     // 父对话框 OnDuiNotify：
 //     //   if (n.code == DUIN_VALUECHANGED && n.ctrlId == IDC_PORT)
 //     //       OnPortChanged((int)n.extra);
@@ -53,22 +51,14 @@ namespace balloonwjui {
 //              wrap="false"
 //              fixedHeight="28"/>
 //
-//   注意：跟 <edit> / <searchbox> 一样，builder 不调 EnsureCreated，
-//   caller 自己在 host HWND 就绪后调一次。
-//
 // 事件：
 //   · DUIN_VALUECHANGED — ▲▼ 点击触发；extra = 新值。
-//                          手输入提交需 caller 在 EDIT 的 KILLFOCUS 里
+//                          手工输入的提交需要调用方在输入框失去焦点时
 //                          自己调 SetValue。
 class BUI_API DuiSpinBox : public DuiControl
 {
 public:
     DuiSpinBox();
-
-    // 创建内部真 EDIT 子 HWND。caller 必须在 host HWND 就绪后调一次。
-    //   hwndParent：host HWND。
-    //   返回：true 表示创建成功。
-    bool   EnsureCreated(HWND hwndParent);
 
     // 设置 / 读取取值范围。SetRange 之后 m_value 会被 clamp 进新区间。
     //   minV / maxV：必须 minV <= maxV。
@@ -109,7 +99,7 @@ public:
     RECT   GetDownRect() const;
 
     // 直接拿到内部 EDIT 子控件指针（所有权在 m_children 里）。
-    DuiEditHost* GetEdit() const { return m_edit; }
+    DuiEdit* GetEdit() const { return m_edit; }
 
     // ---- DuiControl 覆写 ----
     void   Layout(const RECT& rcAvail) override;
@@ -122,7 +112,7 @@ private:
     void   StepBy(int delta);
     void   PushValueToEdit();
 
-    DuiEditHost* m_edit  = nullptr;
+    DuiEdit* m_edit  = nullptr;
     int          m_min   = 0;
     int          m_max   = 100;
     int          m_step  = 1;

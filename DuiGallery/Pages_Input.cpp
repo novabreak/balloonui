@@ -1,8 +1,7 @@
 /**
- *  画廊「输入控件」分组的全部演示页面：DuiEditHost（输入框的兼容外壳）、
- *  DuiEdit（无窗口输入框）、DuiRichEdit（富文本）、DuiSearchBox 与 DuiSpinBox
- *  （搜索框与数字微调框）、DuiSlider（滑块）、DuiSwitch（开关）、DuiComboBox
- *  （下拉框）。
+ *  画廊「输入控件」分组的全部演示页面：DuiEdit（输入框）、DuiRichEdit（富文本）、
+ *  DuiSearchBox 与 DuiSpinBox（搜索框与数字微调框）、DuiSlider（滑块）、
+ *  DuiSwitch（开关）、DuiComboBox（下拉框）。
  *
  *  每个页面对应一个 Build_* 函数，文件末尾的 GetInputPages 把它们汇总成本分组
  *  的页面列表交给页面注册表。页面的版式与卡片由 PageKit.h 统一提供，面向读者
@@ -20,7 +19,6 @@
 #include "Controls/Layout/DuiLayout.h"
 #include "Controls/Basic/DuiLabel.h"
 #include "Controls/Basic/DuiButton.h"
-#include "Controls/Input/DuiEditHost.h"
 #include "Controls/Input/DuiEdit.h"
 #include "Controls/Input/DuiRichEdit.h"
 #include "Controls/Input/DuiSearchBox.h"
@@ -44,13 +42,17 @@ namespace {
 // 用这个值，改一处全分组同时生效。
 const int kRowGapPx = 12;
 
-// 单行控件演示行的行高（像素）。兼容外壳输入框、下拉框、滑块、开关这几页
+// 单行控件演示行的行高（像素）。搜索框与数字微调框、下拉框、滑块、开关这几页
 // 的演示行都用它。
 const int kCompactRowHeightPx = 28;
 
-// 无窗口输入框那一页演示行的行高（像素）。比上面高 2 像素，是为了让控件
+// 输入框那一页演示行的行高（像素）。比上面高 2 像素，是为了让控件
 // 自带的上下内边距完整露出来，看得清边框与文字之间的留白。
 const int kEditRowHeightPx = 30;
+
+// 输入框页「胶囊样式」那一组演示行的行高（像素）。比普通演示行再高 2 像素，
+// 因为这一组去掉了边框、改用整块底色，行矮了看起来会显得局促。
+const int kPillRowHeightPx = 32;
 
 // 状态提示标签的行高（像素）。用于「最近一次收到的通知是什么」这类一行提示。
 const int kStatusRowHeightPx = 20;
@@ -64,7 +66,7 @@ const COLORREF kBrandBlueColor = RGB(45, 108, 223);
 #if BUI_FEATURE_EDIT
 
 // =====================================================================
-// 输入框两页共用的内联图标画法
+// 输入框页的内联图标画法
 // =====================================================================
 
 // 演示图标统一使用的颜色：偏冷的中性灰。在白色底上看得清，又不会比输入的
@@ -89,6 +91,10 @@ const int kPainterGutterWidthPx = 28;
 
 // 字形图标栏的宽度（像素）。SetIconGlyph 直接画一个字符，比自绘图形窄一档。
 const int kGlyphGutterWidthPx = 24;
+
+// 「胶囊样式」那一组图标栏的宽度（像素）。比自绘图标栏再宽一档，让放大镜
+// 离控件左边缘远一些，与整块底色配合起来才不显得贴边。
+const int kPillGutterWidthPx = 32;
 
 // 左侧图标的画法：画一个放大镜，表示这是一个搜索用的输入框。
 // 本函数作为 DuiEdit::IconPainter 交给控件，控件在每次重绘时调用它。
@@ -130,7 +136,7 @@ void PaintDemoClearCross(HDC hdc, const RECT& rc)
                     kDemoIconColor, kDemoStrokeWidth);
 }
 
-// 无窗口输入框页「右侧可点击图标」那一组的通知接收器。
+// 输入框页「右侧可点击图标」那一组的通知接收器。
 //
 // 演示程序里控件的通知走 GalleryFrame::OnDuiNotify → Gallery::g_pageNotifyHook
 // 这条路，与业务窗口自己收 WM_DUI_NOTIFY 是同一回事。这里写成具名仿函数而不是
@@ -457,203 +463,18 @@ const int kSwitchWidthPx = 46;
 
 } // 匿名命名空间
 
-// ===== DuiEditHost　输入框（兼容外壳）================================
+// ===== DuiEdit　输入框 ===============================================
+//
+// 本页演示的是普通输入框 DuiEdit，它是无窗口实现，没有自己的 HWND。它是
+// DuiRichEdit 的子类：排版、光标、选区、输入法、剪贴板、右键菜单全部由基类提供，
+// 本类只补上「普通输入框」多出来的语义 —— 单行回车不换行、左右内联图标栏、
+// 密码显隐切换按钮、单行文字垂直居中。
+//
+// 本页由两个页面合并而来。库里早先有两个普通输入框控件，一个内嵌真 Win32 输入框
+// 子窗口、一个是无窗口实现，各自占一页；旧的那个控件删除之后两页演示的成了同一个
+// 控件，因此合并成本页，两页原有的演示组都保留下来。
 
 std::unique_ptr<DuiControl> Build_Edit()
-{
-    std::unique_ptr<GalleryPageBox> page = NewPage();
-
-    AddSection(page.get(),
-               Txt(_T("兼容外壳：单行输入框 + 占位文字"),
-                   _T("Compatibility shell: single line and placeholder")),
-               Txt(_T("DuiEditHost 这个类名下曾经是一个内嵌真 Win32 输入框子窗口的控件。")
-                   _T("2026-08-17 起输入框改为无窗口实现，本类退化成 DuiEdit 之上薄薄的一层")
-                   _T("兼容外壳，只为让两个程序里几百处存量调用零改动通过编译。因此本页演示的")
-                   _T("其实就是 DuiEdit 的行为：内容为空且没有获得焦点时显示占位文字。")
-                   _T("新写的代码请直接用下一页的 DuiEdit。"),
-                   _T("DuiEditHost used to embed a real Win32 edit child window. Since ")
-                   _T("2026-08-17 the text box has a windowless implementation and this class ")
-                   _T("is only a thin shell over DuiEdit, kept so that the several hundred ")
-                   _T("existing call sites in the two applications still compile unchanged. ")
-                   _T("What this page shows is therefore DuiEdit's own behaviour: the ")
-                   _T("placeholder appears only while the box is empty and unfocused. New code ")
-                   _T("should use DuiEdit directly - see the next page.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> ePlaceholder(new DuiEditHost());
-        ePlaceholder->SetPlaceholder(Txt(_T("请输入用户名"), _T("type your user name...")));
-        row->AddChild(std::move(ePlaceholder), DuiLayout::Hint().Weight(1));
-
-        std::unique_ptr<DuiEditHost> ePrefilled(new DuiEditHost());
-        ePrefilled->SetText(Txt(_T("已经填好的内容"), _T("Pre-filled value")));
-        row->AddChild(std::move(ePrefilled), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), kCompactRowHeightPx);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("密码框"), _T("Password")),
-               Txt(_T("SetPassword(true) 之后输入的内容以遮蔽字符显示。这个设置随时可以改，")
-                   _T("不必重建控件 —— 旧的子窗口实现要改它得先销毁再重建子窗口。"),
-                   _T("SetPassword(true) masks every character that is typed. The setting can ")
-                   _T("be changed at any time without rebuilding the control; the old ")
-                   _T("child-window implementation had to destroy and recreate the window ")
-                   _T("for this.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-        e->SetPassword(true);
-        e->SetPlaceholder(Txt(_T("密码"), _T("password")));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), kCompactRowHeightPx);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("密码框 + 显隐切换按钮"), _T("Password with a reveal toggle")),
-               Txt(_T("SetShowEyeToggle(true) 会在右侧加一个眼睛按钮，点一下在遮蔽与明文之间")
-                   _T("切换。"),
-                   _T("SetShowEyeToggle(true) adds an eye button on the right side; click it ")
-                   _T("to switch between the masked and the plain text.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-        e->SetPassword(true);
-        e->SetShowEyeToggle(true);
-        e->SetPlaceholder(Txt(_T("输入点什么再点右边的眼睛"),
-                              _T("type something to hide...")));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), kCompactRowHeightPx);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("只读"), _T("Read-only")),
-               Txt(_T("SetReadOnly(true) 之后不能修改内容，但仍然可以点击定位光标、拖动选择、")
-                   _T("复制。"),
-                   _T("With SetReadOnly(true) the content cannot be changed, but clicking to ")
-                   _T("place the caret, dragging to select and copying all still work.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-        e->SetText(Txt(_T("这段文字是只读的"), _T("This text is read-only")));
-        e->SetReadOnly(true);
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), kCompactRowHeightPx);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("多行"), _T("Multi-line")),
-               Txt(_T("SetMultiLine(true) 打开多行模式：回车换行，输入法与拖动选择都正常。")
-                   _T("多行模式下文字一律从顶边开始排，不再垂直居中。"),
-                   _T("SetMultiLine(true) turns on multi-line mode: Enter inserts a line ")
-                   _T("break, and IME input and drag-selection work as usual. Multi-line text ")
-                   _T("always starts at the top edge instead of being vertically centred.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-        e->SetMultiLine(true);
-        e->SetPlaceholder(Txt(_T("备注（多行，支持输入法，可拖动选择）"),
-                              _T("notes (multi-line, IME, drag to select)")));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), 80);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("左右内联图标栏"), _T("Inline icons (left / right gutter)")),
-               Txt(_T("SetIcon(LeftIcon 或 RightIcon, 图标栏宽度, 画法) 在文本两侧让出一条")
-                   _T("图标栏，文本区自动内缩相应宽度；宽度默认为 0，此时的行为与不带图标")
-                   _T("完全一致。画法是一个普通的绘制回调，用任何 GDI / GDI+ 接口画都行；")
-                   _T("只想放一个符号时用 SetIconGlyph 更省事。对某一侧调用 SetIconClickable ")
-                   _T("之后，点击该侧图标栏会向父窗口发出 DUIEN_LEFT_ICON_CLICK 或 ")
-                   _T("DUIEN_RIGHT_ICON_CLICK。"),
-                   _T("SetIcon(LeftIcon or RightIcon, gutter width, painter) reserves an icon ")
-                   _T("gutter beside the text and insets the text area by that width. The ")
-                   _T("width defaults to 0, which behaves exactly as if there were no icon at ")
-                   _T("all. The painter is an ordinary drawing callback, so any GDI / GDI+ API ")
-                   _T("will do; SetIconGlyph is the shortcut when a single character is enough. ")
-                   _T("After SetIconClickable, a click on that gutter sends ")
-                   _T("DUIEN_LEFT_ICON_CLICK or DUIEN_RIGHT_ICON_CLICK to the parent window.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        // 其一：左侧放大镜，纯装饰，不可点击。
-        std::unique_ptr<DuiEditHost> eLeft(new DuiEditHost());
-        eLeft->SetPlaceholder(Txt(_T("搜索音乐、播客"), _T("Search music, podcasts...")));
-        eLeft->SetIcon(DuiEditHost::LeftIcon, kPainterGutterWidthPx, &PaintDemoMagnifier);
-        row->AddChild(std::move(eLeft), DuiLayout::Hint().Weight(1));
-
-        // 其二：右侧叉号，标记为可点击。
-        std::unique_ptr<DuiEditHost> eRight(new DuiEditHost());
-        eRight->SetText(Txt(_T("查询内容"), _T("query text")));
-        eRight->SetIconGlyph(DuiEditHost::RightIcon, kGlyphGutterWidthPx,
-                             _T("✕"), kDemoIconColor);
-        eRight->SetIconClickable(DuiEditHost::RightIcon, true);
-        row->AddChild(std::move(eRight), DuiLayout::Hint().Weight(1));
-
-        // 其三：两侧都有 —— 左边一个 @，右边一个叉号。
-        std::unique_ptr<DuiEditHost> eBoth(new DuiEditHost());
-        eBoth->SetPlaceholder(Txt(_T("邮箱地址"), _T("email")));
-        eBoth->SetIconGlyph(DuiEditHost::LeftIcon, kGlyphGutterWidthPx,
-                            _T("@"), kDemoIconColor);
-        eBoth->SetIconGlyph(DuiEditHost::RightIcon, kGlyphGutterWidthPx,
-                            _T("✕"), kDemoIconColor);
-        eBoth->SetIconClickable(DuiEditHost::RightIcon, true);
-        row->AddChild(std::move(eBoth), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), kCompactRowHeightPx);
-    }
-
-    AddSection(page.get(),
-               Txt(_T("胶囊样式：底色 + 去边框 + 左侧图标"),
-                   _T("Pill style: background colour, no border, left icon")),
-               Txt(_T("三项设置的组合用法：SetBgColor 换一个浅灰底色，SetShowBorder(false) ")
-                   _T("去掉边框，再加一个左侧放大镜。实际界面里外层容器还会画一块同色的圆角底")
-                   _T("把它包住，这里没有画，演示行直接落在卡片底色上。"),
-                   _T("A combination of three settings: SetBgColor for a light grey fill, ")
-                   _T("SetShowBorder(false) to drop the border, plus a magnifier on the left. ")
-                   _T("In a real screen an outer container would paint a rounded pill of the ")
-                   _T("same grey around it; that is not done here, so the row sits directly on ")
-                   _T("the card background.")));
-    {
-        std::unique_ptr<DuiHBox> row(new DuiHBox());
-        row->SetGap(kRowGapPx);
-
-        std::unique_ptr<DuiEditHost> e(new DuiEditHost());
-        e->SetPlaceholder(Txt(_T("搜索任意内容"), _T("Search anything...")));
-        e->SetBgColor(RGB(0xF3, 0xF3, 0xF4));
-        e->SetShowBorder(false);
-        // 胶囊样式的图标栏比普通的宽一点，让放大镜离左边缘远一些。
-        e->SetIcon(DuiEditHost::LeftIcon, 32, &PaintDemoMagnifier);
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-
-        AddVariantRow(page.get(), std::move(row), 32);
-    }
-
-    return std::unique_ptr<DuiControl>(page.release());
-}
-
-// ===== DuiEdit　无窗口输入框 =========================================
-//
-// 本页演示的是无窗口的普通输入框 DuiEdit。它是 DuiRichEdit 的子类：排版、
-// 光标、选区、输入法、剪贴板、右键菜单全部由基类提供，本类只补上「普通输入框」
-// 多出来的语义 —— 单行回车不换行、左右内联图标栏、密码显隐切换按钮、单行文字
-// 垂直居中。
-
-std::unique_ptr<DuiControl> Build_EditWindowless()
 {
     std::unique_ptr<GalleryPageBox> page = NewPage();
 
@@ -814,6 +635,60 @@ std::unique_ptr<DuiControl> Build_EditWindowless()
         // 注册页面通知钩子。切换到别的页面时画廊窗口会把它清空，因此上面两个
         // 裸指针不会在页面销毁之后被再次使用。
         g_pageNotifyHook = EditNotifyWatcher(pClearable, kIdClearableEdit, pStatus);
+    }
+
+    AddSection(page.get(),
+               Txt(_T("两侧同时带图标"), _T("Icons on both sides at once")),
+               Txt(_T("左右两条图标栏互不影响，可以同时装。这里左侧放一个 @ 符号，右侧放一个")
+                   _T("叉号并标记为可点击。两侧让出的宽度都会从文本区里扣掉，文字始终排在剩下")
+                   _T("的中间部分。图标栏宽度默认为 0，此时的行为与不带图标完全一致。"),
+                   _T("The left and right gutters are independent of each other, so both can be ")
+                   _T("used at the same time. Here the left one holds an @ sign and the right one ")
+                   _T("a cross that is marked clickable. The width reserved on each side is taken ")
+                   _T("out of the text area, so the text always sits in what is left in between. ")
+                   _T("The gutter width defaults to 0, which behaves exactly as if there were no ")
+                   _T("icon at all.")));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(kRowGapPx);
+
+        std::unique_ptr<DuiEdit> eBoth(new DuiEdit());
+        eBoth->SetPlaceholder(Txt(_T("邮箱地址"), _T("Email address")));
+        eBoth->SetIconGlyph(DuiEdit::LeftIcon, kGlyphGutterWidthPx,
+                            _T("@"), kDemoIconColor);
+        eBoth->SetIconGlyph(DuiEdit::RightIcon, kGlyphGutterWidthPx,
+                            _T("✕"), kDemoIconColor);
+        eBoth->SetIconClickable(DuiEdit::RightIcon, true);
+        row->AddChild(std::move(eBoth), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), kEditRowHeightPx);
+    }
+
+    AddSection(page.get(),
+               Txt(_T("胶囊样式：底色 + 去边框 + 左侧图标"),
+                   _T("Pill style: background colour, no border, left icon")),
+               Txt(_T("三项设置的组合用法：SetBgColor 换一个浅灰底色，SetShowBorder(false) ")
+                   _T("去掉边框，再加一个左侧放大镜。实际界面里外层容器还会画一块同色的圆角底")
+                   _T("把它包住，这里没有画，演示行直接落在卡片底色上。"),
+                   _T("A combination of three settings: SetBgColor for a light grey fill, ")
+                   _T("SetShowBorder(false) to drop the border, plus a magnifier on the left. ")
+                   _T("In a real screen an outer container would paint a rounded pill of the ")
+                   _T("same grey around it; that is not done here, so the row sits directly on ")
+                   _T("the card background.")));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(kRowGapPx);
+
+        std::unique_ptr<DuiEdit> e(new DuiEdit());
+        e->SetPlaceholder(Txt(_T("搜索任意内容"), _T("Search anything...")));
+        e->SetBgColor(RGB(0xF3, 0xF3, 0xF4));
+        e->SetShowBorder(false);
+        // 胶囊样式的图标栏比普通的宽一点，让放大镜离左边缘远一些。
+        e->SetIcon(DuiEdit::LeftIcon, kPillGutterWidthPx, &PaintDemoMagnifier);
+        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
+
+        // 胶囊样式比其它演示行略高一点，圆角底色铺开之后观感才对。
+        AddVariantRow(page.get(), std::move(row), kPillRowHeightPx);
     }
 
     AddSection(page.get(),
@@ -1540,8 +1415,7 @@ std::unique_ptr<DuiControl> Build_ComboBox()
 const PageEntry* GetInputPages(int& outCount)
 {
     static const PageEntry s_pages[] = {
-        { _T("edit-host"),   _T("DuiEditHost　兼容外壳"), _T("DuiEditHost"),   &Build_Edit,           true },
-        { _T("edit"),        _T("DuiEdit　无窗口输入框"),           _T("DuiEdit"),       &Build_EditWindowless, true },
+        { _T("edit"),        _T("DuiEdit　输入框"),                 _T("DuiEdit"),       &Build_Edit,           true },
         { _T("rich-edit"),   _T("DuiRichEdit　富文本"),             _T("DuiRichEdit"),   &Build_RichText,       true },
         { _T("search-spin"), _T("搜索框与数字微调框"), _T("SearchBox & SpinBox"), &Build_SearchSpin, true },
         { _T("slider"),      _T("DuiSlider　滑块"),                 _T("DuiSlider"),     &Build_Slider,         true },

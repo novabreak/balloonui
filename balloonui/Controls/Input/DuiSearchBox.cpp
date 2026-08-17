@@ -101,7 +101,7 @@ RECT DuiSearchBox::GetClearRect() const
 
 void DuiSearchBox::OnTextChanged()
 {
-    DuiEditHost::OnTextChanged();
+    DuiEdit::OnTextChanged();
     // 文字内容变了，刷新叉号的显隐。用户编辑与业务代码调 SetText 都会走到
     // 这里，不需要在 SetText 上另设一个同步点。
     SyncClear_();

@@ -126,9 +126,12 @@ bool SaveRegionAsPng(HDC srcDC, int x, int y, int w, int h, LPCTSTR outPath)
 // Snapshot composes:
 //   1) BitBlt the host's DUI back buffer (covers all paint-only DUI
 //      controls — buttons, labels, avatars, etc.).
-//   2) Walk every visible HWND-hosted child (EDIT in DuiEditHost /
-//      DuiSearchBox / DuiSpinBox) and paint each
-//      child's content on top of the snapshot in its rect.
+//   2) Walk every visible child HWND of the host and paint each
+//      child's content on top of the snapshot in its rect. No control
+//      in the library hosts a real child window any more (the input
+//      controls became windowless on 2026-08-17), so this step is
+//      normally a no-op; it is kept so that a host which does create
+//      its own child window still gets captured correctly.
 //
 // PrintWindow on a fully-off-screen window paints black on Win10+, so
 // the "snapshot the whole window" path is not viable here; this
@@ -169,7 +172,7 @@ HDC SnapshotHostToDib(HWND host, HDC backDC, int w, int h,
         ::FillRect(memDC, &rcAll, ::GetSysColorBrush(COLOR_BTNFACE));
     }
 
-    // 2) Walk HWND-hosted children. Each child gets PrintWindow'd
+    // 2) Walk the host's child windows. Each child gets PrintWindow'd
     //    into its rect on top of the DUI paint. PrintWindow on a real
     //    HWND child (with its own paint cycle that already ran) does
     //    work even when the parent is off-screen, because the child
@@ -217,8 +220,8 @@ int RunCaptureAll(LPCTSTR outDir)
 
     CaptureOwner owner;
     // WS_VISIBLE but positioned far off-screen so WM_PAINT actually
-    // fires for the host AND its HWND-hosted children. A truly hidden
-    // window collapses paint and EDIT controls would never render.
+    // fires for the host and for any child window it creates. A truly
+    // hidden window collapses paint and nothing would render.
     // WS_EX_TOOLWINDOW + WS_EX_NOACTIVATE keep it out of the taskbar
     // and prevent focus theft. WS_DISABLED stops accidental input.
     if (!owner.Create(NULL, CWindow::rcDefault, _T("DuiGallery Capture"),

@@ -215,9 +215,8 @@
 // ---------------------------------------------------------------------
 // 作用：普通文本输入框。单行 / 多行 / 密码 / 占位文字 / 只读 / 最大长度，
 // 外加左右内联图标栏、密码显隐按钮、单行文字垂直居中。
-// 关闭后影响：DuiEdit 与兼容外壳 DuiEditHost 一起消失，XML <edit> 标签
-// 失效。<u>传染</u>：SearchBox / SpinBox / ComboBox / TreeView 都依赖它，
-// 会被一起关掉。
+// 关闭后影响：DuiEdit 类消失，XML <edit> 标签失效。<u>传染</u>：
+// SearchBox / SpinBox / ComboBox / TreeView 都依赖它，会被一起关掉。
 // 依赖：<u>RICHTEXT</u> —— 2026-08-17 起本控件改为无窗口实现，建在富文本
 // 控件 DuiRichEdit 之上（排版、光标、输入法、剪贴板都由它提供），因此关掉
 // RICHTEXT 就不能再开 EDIT。下面的依赖一致性检查会拦住这种组合。
@@ -240,21 +239,6 @@
 // 显示。
 #ifndef BUI_DISABLE_IMAGEOLE
 #  define BUI_FEATURE_IMAGEOLE 1
-#endif
-
-
-// ---------------------------------------------------------------------
-// RICHEDIT —— 已移除
-// ---------------------------------------------------------------------
-// 库里原先有一个内嵌真 Win32 富文本子窗口的控件，开关名为 RICHEDIT。
-// 它已被无窗口的 RICHTEXT（见下一节）整体取代并删除，XML 标签也由
-// <richedit> 统一为 <richtext>。
-//
-// 这里刻意留一条报错而不是默默忽略：业务侧若还在预处理器定义里写着
-// BUI_DISABLE_RICHEDIT，那行定义已经不起任何作用 —— 静默失效比编译报错
-// 难查得多，尤其是「我明明关掉了，怎么体积没变」这类问题。
-#if defined(BUI_DISABLE_RICHEDIT)
-#  error "BUI_DISABLE_RICHEDIT is obsolete: the HWND-hosted rich edit control has been removed. Use BUI_DISABLE_RICHTEXT to strip the windowless DuiRichEdit instead."
 #endif
 
 
@@ -359,7 +343,7 @@
 // ---------------------------------------------------------------------
 // COMBOBOX —— DuiComboBox（下拉选择框 = EDIT + 下拉 LISTBOX）
 // ---------------------------------------------------------------------
-// 作用：复合控件 = DuiEditHost（可输入或纯显示）+ 右侧 ▼ 按钮，点 ▼
+// 作用：复合控件 = DuiEdit（可输入或纯显示）+ 右侧 ▼ 按钮，点 ▼
 // 弹下拉 DuiListBox 让用户选。
 // 关闭后影响：DuiComboBox 类消失。XML <combobox> 标签失效。
 // 依赖：EDIT + LISTBOX。
@@ -376,7 +360,7 @@
 // 类型（TEXT / ICON / IMAGE / CHECKBOX / PROGRESS / HYPERLINK）；
 // 可冻结左侧 N 列 / 顶部 N 行；表头点击排序；inline 单元格编辑。
 // 关闭后影响：DuiTreeView 类消失。XML <treeview> + 子 <column> 失效。
-// 依赖：SCROLLBAR + EDIT（inline 单元格编辑器是 DuiEditHost）。
+// 依赖：SCROLLBAR + EDIT（inline 单元格编辑器是 DuiEdit）。
 // 典型场景：任务管理器（进程 / 服务 / 详细信息）、文件浏览器详情视
 // 图、邮件列表。
 #if !defined(BUI_DISABLE_TREEVIEW) && defined(BUI_FEATURE_SCROLLBAR) && defined(BUI_FEATURE_EDIT)
@@ -599,16 +583,16 @@
 #  error "BUI_FEATURE_EDIT requires BUI_FEATURE_RICHTEXT (DuiEdit derives from DuiRichEdit). Remove BUI_DISABLE_RICHTEXT or also disable EDIT."
 #endif
 #if defined(BUI_DISABLE_EDIT) && defined(BUI_FEATURE_SEARCHBOX)
-#  error "BUI_FEATURE_SEARCHBOX requires BUI_FEATURE_EDIT (DuiSearchBox embeds DuiEditHost). Remove BUI_DISABLE_EDIT or also disable SEARCHBOX."
+#  error "BUI_FEATURE_SEARCHBOX requires BUI_FEATURE_EDIT (DuiSearchBox embeds DuiEdit). Remove BUI_DISABLE_EDIT or also disable SEARCHBOX."
 #endif
 #if defined(BUI_DISABLE_EDIT) && defined(BUI_FEATURE_SPINBOX)
-#  error "BUI_FEATURE_SPINBOX requires BUI_FEATURE_EDIT (DuiSpinBox embeds DuiEditHost). Remove BUI_DISABLE_EDIT or also disable SPINBOX."
+#  error "BUI_FEATURE_SPINBOX requires BUI_FEATURE_EDIT (DuiSpinBox embeds DuiEdit). Remove BUI_DISABLE_EDIT or also disable SPINBOX."
 #endif
 #if defined(BUI_DISABLE_EDIT) && defined(BUI_FEATURE_COMBOBOX)
-#  error "BUI_FEATURE_COMBOBOX requires BUI_FEATURE_EDIT (DuiComboBox embeds DuiEditHost). Remove BUI_DISABLE_EDIT or also disable COMBOBOX."
+#  error "BUI_FEATURE_COMBOBOX requires BUI_FEATURE_EDIT (DuiComboBox embeds DuiEdit). Remove BUI_DISABLE_EDIT or also disable COMBOBOX."
 #endif
 #if defined(BUI_DISABLE_EDIT) && defined(BUI_FEATURE_TREEVIEW)
-#  error "BUI_FEATURE_TREEVIEW requires BUI_FEATURE_EDIT (TreeView uses DuiEditHost for inline cell editing). Remove BUI_DISABLE_EDIT or also disable TREEVIEW."
+#  error "BUI_FEATURE_TREEVIEW requires BUI_FEATURE_EDIT (TreeView uses DuiEdit for inline cell editing). Remove BUI_DISABLE_EDIT or also disable TREEVIEW."
 #endif
 #if defined(BUI_DISABLE_SCROLLBAR) && defined(BUI_FEATURE_LISTBOX)
 #  error "BUI_FEATURE_LISTBOX requires BUI_FEATURE_SCROLLBAR. Remove BUI_DISABLE_SCROLLBAR or also disable LISTBOX."

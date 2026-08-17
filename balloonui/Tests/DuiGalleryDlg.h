@@ -12,7 +12,7 @@
 
 namespace balloonwjui {
 
-class DuiEditHost;
+class DuiEdit;
 class DuiTab;
 class DuiMenuBar;
 
@@ -70,7 +70,7 @@ private:
     DuiHost      m_host;
     CString      m_log;
     int          m_logHeight = 120;
-    DuiEditHost* m_edits[3] = { nullptr, nullptr, nullptr };
+    DuiEdit* m_edits[3] = { nullptr, nullptr, nullptr };
     DuiTab*      m_tab      = nullptr;
 #if BUI_FEATURE_MENUBAR
     // 3 个 DuiMenu 是 DuiMenuBar 栏目的下拉，lifetime 必须 ≥ menu bar。

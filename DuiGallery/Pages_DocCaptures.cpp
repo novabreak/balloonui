@@ -46,7 +46,7 @@
 #include "Controls/Input/DuiSpinBox.h"
 #include "Controls/Input/DuiSlider.h"
 #include "Controls/Input/DuiComboBox.h"
-#include "Controls/Input/DuiEditHost.h"
+#include "Controls/Input/DuiEdit.h"
 #include "Controls/Input/DuiRichEdit.h"
 #include "Controls/Feedback/DuiProgressBar.h"
 #include "Controls/Feedback/DuiEmojiPanel.h"
@@ -1026,23 +1026,23 @@ std::unique_ptr<DuiControl> Build_DocCaptures()
     // ---- 七、文本编辑与其它控件 ---------------------------------------
 
     AddSection(page.get(), _T("edit-states"),
-               _T("DuiEditHost — empty placeholder / filled / focused / disabled."));
+               _T("DuiEdit — empty placeholder / filled / focused / disabled."));
     {
         std::unique_ptr<DuiHBox> row(new DuiHBox());
         row->SetGap(12);
 
-        std::unique_ptr<DuiEditHost> eEmpty(new DuiEditHost());
+        std::unique_ptr<DuiEdit> eEmpty(new DuiEdit());
         eEmpty->SetPlaceholder(_T("Type here..."));
 
-        std::unique_ptr<DuiEditHost> eFilled(new DuiEditHost());
+        std::unique_ptr<DuiEdit> eFilled(new DuiEdit());
         eFilled->SetText(_T("alice@example.com"));
 
         // 截图时没有真正的输入焦点，用调试接口把焦点态强制置上。
-        std::unique_ptr<DuiEditHost> eFocused(new DuiEditHost());
+        std::unique_ptr<DuiEdit> eFocused(new DuiEdit());
         eFocused->SetText(_T("focused"));
         eFocused->DebugSetFocused(true);
 
-        std::unique_ptr<DuiEditHost> eDisabled(new DuiEditHost());
+        std::unique_ptr<DuiEdit> eDisabled(new DuiEdit());
         eDisabled->SetText(_T("disabled"));
         eDisabled->SetEnabled(false);
 
