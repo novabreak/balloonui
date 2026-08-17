@@ -52,16 +52,16 @@ void PaintClearGlyph(HDC hdc, const RECT& rc)
 
 DuiSearchBox::DuiSearchBox()
 {
-    SetTabStop(true);   // 与 DuiEditHost 默认一致；明示
+    SetTabStop(true);   // 与基类默认一致，这里显式写出来
     InstallMagnifier_();
-    // 右侧 × 不在 ctor 里安装 —— 文字非空时 SyncClear_ 才装。这样空状
-    // 态下 × 不画，与重构前的 IsClearShowing 行为一致。
+    // 右侧叉号不在构造函数里安装 —— 文字非空时 SyncClear_ 才装。这样空状
+    // 态下叉号不画，与重构前的 IsClearShowing 行为一致。
 }
 
 void DuiSearchBox::InstallMagnifier_()
 {
     SetIcon(LeftIcon, kDefaultGlyphW, &PaintMagnifierGlyph);
-    // 放大镜不可点击 —— 是装饰，鼠标穿透到 EDIT 设 caret
+    // 放大镜只是装饰，标记为不可点击，让鼠标穿透到文本区去定位光标
     SetIconClickable(LeftIcon, false);
 }
 
@@ -91,28 +91,20 @@ RECT DuiSearchBox::GetClearRect() const
         RECT z = { 0, 0, 0, 0 };
         return z;
     }
-    // 沿用 DuiEditHost::ComputeIconRect 静态 helper —— 与基类 OnPaint /
-    // hit-test 用同一套计算，保证三者一致。
-    // border=1 marginV 用 DuiEditHost 默认 m_marginT = 2。
+    // 沿用基类的 ComputeIconRect 静态方法 —— 与基类绘制、命中判定用同一套
+    // 计算，保证三者一致。
+    // 后两个实参是边框宽度与图标上下内缩，取值必须与基类内部一致：它们对应
+    // DuiEdit.cpp 里的 kBorderPx（当前为 1）与 kIconMarginV（当前为 2），
+    // 那边改了这里要同步改，否则叉号的绘制位置与命中区会对不上。
     return ComputeIconRect(GetRect(), RightIcon, m_clearW, 1, 2);
 }
 
-void DuiSearchBox::SetText(LPCTSTR sz)
+void DuiSearchBox::OnTextChanged()
 {
-    DuiEditHost::SetText(sz);
-    // 单测路径（无 HWND）EN_CHANGE 不会触发；显式补一次
+    DuiEditHost::OnTextChanged();
+    // 文字内容变了，刷新叉号的显隐。用户编辑与业务代码调 SetText 都会走到
+    // 这里，不需要在 SetText 上另设一个同步点。
     SyncClear_();
-}
-
-void DuiSearchBox::OnHwndCommand(UINT enCode)
-{
-    // 基类先处理：转 cache + 发 DUIN_VALUECHANGED 等
-    DuiEditHost::OnHwndCommand(enCode);
-    // EN_CHANGE 之后文字内容可能变了，刷 × 显隐
-    if (enCode == EN_CHANGE)
-    {
-        SyncClear_();
-    }
 }
 
 void DuiSearchBox::SyncClear_()
@@ -129,17 +121,16 @@ void DuiSearchBox::SyncClear_()
     }
 }
 
-bool DuiSearchBox::OnIconClicked_(IconSlot slot)
+bool DuiSearchBox::OnIconClicked(IconSlot slot)
 {
     if (slot == RightIcon)
     {
-        // × 清除：本类自吞 click，不让 DUIEN_RIGHT_ICON_CLICK 冒泡 ——
-        // 父业务关心的是"用户改了搜索文字"，应在 DUIN_VALUECHANGED
-        // 里收到（基类 OnHwndCommand EN_CHANGE 会发，下面 SetText("")
-        // 会触发）。
+        // 点击清除叉号：本类自己消化这次点击，不让图标点击通知冒泡到宿主 ——
+        // 业务代码关心的是"用户改了搜索文字"，那件事由下面 SetText 发出的
+        // DUIN_VALUECHANGED 承载。
         SetText(_T(""));
-        // SetText 同步到 HWND → EDIT 发 EN_CHANGE → OnHwndCommand →
-        // SyncClear_ → ClearIcon(RightIcon)，自动消失。
+        // SetText 会依次调用 OnTextChanged 与 SyncClear_，叉号随之
+        // ClearIcon(RightIcon) 自行消失，这里不必再处理。
         return true;
     }
     return false;

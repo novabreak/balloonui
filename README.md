@@ -23,8 +23,11 @@ balloonui 走 **"宿主一个 HWND，子控件全部 DUI"** 的路线：
 - 一个 `DuiHost` 持有唯一的 HWND，整棵控件树挂在它的客户区里；
 - 子控件由 `DuiControl` 派生，无 HWND，事件通过 `WM_DUI_NOTIFY` 冒泡给父
   窗口；
-- RichEdit / Edit 这类必须依赖系统 IME 的控件，通过 `HwndHostControl`
-  适配器以"飞地"形式嵌入，是显式的例外。
+- 依赖系统输入法的控件也**没有例外**：普通输入框 `DuiEdit` 与富文本
+  `DuiRichEdit` 都走无窗口路线，直接驱动系统的 RichEdit 排版引擎，输入法
+  上下文与光标由控件自己提供，因此它们都是 DUI 树里的普通一员。库内不再
+  提供把真窗口接入控件树的设施，所有控件都由库直接绘制、都受父容器裁剪、
+  也都按同一套绘制层级参与绘制。
 
 ![DUI 控件树结构](docs/images/ctl-host-tree.png)
 
@@ -38,7 +41,7 @@ balloonui 走 **"宿主一个 HWND，子控件全部 DUI"** 的路线：
 | 类别 | 控件 |
 |---|---|
 | Basic（基础） | `DuiLabel` `DuiButton` `DuiAvatar` `DuiBadge` `DuiSeparator` `DuiGroupBox` |
-| Input（输入） | `DuiEditHost` `DuiRichEditHost` `DuiSearchBox` `DuiSpinBox` `DuiComboBox` `DuiSlider` `DuiSwitch` |
+| Input（输入） | `DuiEdit` `DuiRichEdit` `DuiSearchBox` `DuiSpinBox` `DuiComboBox` `DuiSlider` `DuiSwitch` |
 | List（列表 / 容器） | `DuiListBox` `DuiTreeView` `DuiTab` `DuiTabPage` `DuiMenu` `DuiMenuBar` |
 | Layout（布局） | `DuiLayout` (`DuiVBox` / `DuiHBox` / `DuiGrid`) `DuiDock` `DuiSplitter` |
 | Feedback（反馈） | `DuiProgressBar` `DuiToolTip` `DuiPopupHost` `DuiEmojiPanel` |
@@ -54,11 +57,18 @@ PushButton 默认走品牌蓝 `#2D6CDF` + 8px 圆角，hover / pressed / disable
 ![按钮风格总览](docs/images/ctl-button-styles-overview.png)
 ![PushButton 状态](docs/images/ctl-button-pushbutton-states.png)
 
-### 输入：原生 IME 支持 + 复合控件
+### 输入：无窗口实现 + 原生 IME 支持 + 复合控件
 
-EditHost / RichEditHost 内嵌真实的 Win32 EDIT / RICHEDIT，确保中文输入法
-工作正常；SearchBox、SpinBox、ComboBox 都是在 EditHost 之上拼装出来的复合
-控件。
+普通输入框 `DuiEdit` 是富文本控件 `DuiRichEdit` 的子类，两者都不建子窗口，
+直接驱动系统的 RichEdit 排版引擎，输入法上下文、光标与滚动条都由控件自己
+接管，因此它们能被其它控件遮挡、能放进滚动容器、能用透明背景、也能随内容
+自动增高；密码、多行、只读这些属性还可以在运行期随时切换，不需要销毁重建
+控件。`DuiEdit` 在基类之上补齐了普通输入框特有的部分：单行回车不换行、
+左右内联图标栏、密码显隐按钮、单行文字垂直居中。
+
+旧类名 `DuiEditHost` 保留为 `DuiEdit` 的兼容外壳，让存量代码零改动通过
+编译，新代码直接用 `DuiEdit`。SearchBox、SpinBox、ComboBox 都是在输入框
+之上拼装出来的复合控件。
 
 ![Edit 状态](docs/images/ctl-edit-states.png)
 ![SearchBox 状态](docs/images/ctl-searchbox-states.png)
@@ -163,8 +173,9 @@ GetDefaultFont()` 取字体，可一键替换。
 
 `BalloonUiFeatures.h` 提供细粒度的 `BUI_DISABLE_XXX` 宏，业务侧可以只编入
 用到的控件，把未用控件的 `.cpp` 整体排除出编译，显著减少最终 exe / DLL 体
-积。依赖关系（如 `SCROLLBAR` 关掉会连带关 `LISTBOX` / `TREEVIEW`）由头文件
-内的 `#if/#error` 强制一致，避免静默编译出半残的库。
+积。依赖关系（如 `SCROLLBAR` 关掉会连带关 `LISTBOX` / `TREEVIEW`；`EDIT`
+依赖 `RICHTEXT`，因为 `DuiEdit` 派生自 `DuiRichEdit`）由头文件内的
+`#if/#error` 强制一致，避免静默编译出半残的库。
 
 详见 `balloonui/BalloonUiFeatures.h` 顶部说明，以及 `docs/guides.html` 的
 "按需裁剪 (Feature Strip)" 章节。

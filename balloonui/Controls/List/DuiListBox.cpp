@@ -37,6 +37,16 @@ const int kCheckTickStrokePx        = 2;
 // Stroke width (px) for the drag-reorder insertion indicator line.
 const int kDragLineStrokePx         = 2;
 
+// ---- Per-item delete cross ---------------------------------------------------
+// Idle color of the delete cross - light gray, present but visually quiet so
+// a list full of rows does not read as a wall of crosses.
+const COLORREF kDeleteCrossIdle     = RGB(176, 176, 182);
+// Delete cross on the hovered row - darker, hinting it is actionable.
+const COLORREF kDeleteCrossRowHover = RGB(120, 120, 128);
+// Delete cross with the mouse directly over it - red, the usual "this
+// destroys something" cue.
+const COLORREF kDeleteCrossHot      = RGB(214,  70,  70);
+
 } // anonymous namespace
 
 // =====================================================================
@@ -298,6 +308,41 @@ void DuiListBox::SetShowCheckboxes(bool b)
     }
     m_showCheckboxes = b;
     Invalidate();
+}
+
+void DuiListBox::SetShowItemDelete(bool b)
+{
+    if (m_showItemDelete == b)
+    {
+        return;
+    }
+    m_showItemDelete = b;
+    m_deleteHoverIdx = -1;
+    Invalidate();
+}
+
+RECT DuiListBox::DeleteButtonRect(int index) const
+{
+    if (!m_showItemDelete)
+    {
+        return RECT{ 0, 0, 0, 0 };
+    }
+
+    // 贴着行的右边界往左让出一个删除列。ItemRect 的 right 已经扣掉滚动条宽度，
+    // 所以叉不会被滚动条压住。
+    const RECT rc = ItemRect(index);
+    return RECT{ rc.right - kDeleteColW, rc.top, rc.right, rc.bottom };
+}
+
+bool DuiListBox::HitDeleteButton(POINT pt, int index) const
+{
+    if (!m_showItemDelete || index < 0 || index >= (int)m_items.size())
+    {
+        return false;
+    }
+
+    const RECT rc = DeleteButtonRect(index);
+    return pt.x >= rc.left && pt.x < rc.right && pt.y >= rc.top && pt.y < rc.bottom;
 }
 
 bool DuiListBox::IsItemChecked(int idx) const
@@ -606,8 +651,42 @@ void DuiListBox::OnPaint(HDC hdc, const RECT& rcDirty)
         COLORREF oldClr = ::SetTextColor(hdc, clr);
         RECT rText = rc;
         rText.left = textLeft;
+        // 开了删除列就把文字右边界往里收，否则长文本会被省略号盖到叉底下。
+        if (m_showItemDelete)
+        {
+            rText.right -= kDeleteColW;
+        }
         ::DrawText(hdc, m_items[i].text, -1, &rText, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         ::SetTextColor(hdc, oldClr);
+
+        // 行右侧的删除叉。三档配色：平时淡灰（不喧宾夺主）、鼠标在本行时加深
+        // （提示可点）、鼠标正压在叉上时变红（提示这一下会删东西）。
+        if (m_showItemDelete)
+        {
+            COLORREF crossColor = kDeleteCrossIdle;
+            if ((int)i == m_deleteHoverIdx)
+            {
+                crossColor = kDeleteCrossHot;
+            }
+            else if (hov)
+            {
+                crossColor = kDeleteCrossRowHover;
+            }
+
+            const RECT rcDel = DeleteButtonRect((int)i);
+            const int cx = (rcDel.left + rcDel.right) / 2;
+            const int cy = (rcDel.top + rcDel.bottom) / 2;
+            const int half = kDeleteGlyphPx / 2;
+
+            HPEN crossPen = ::CreatePen(PS_SOLID, kDeleteStrokePx, crossColor);
+            HPEN oldPen = (HPEN)::SelectObject(hdc, crossPen);
+            ::MoveToEx(hdc, cx - half, cy - half, nullptr);
+            ::LineTo  (hdc, cx + half + 1, cy + half + 1);
+            ::MoveToEx(hdc, cx + half, cy - half, nullptr);
+            ::LineTo  (hdc, cx - half - 1, cy + half + 1);
+            ::SelectObject(hdc, oldPen);
+            ::DeleteObject(crossPen);
+        }
     }
     ::SetBkMode(hdc, oldBk);
 
@@ -654,6 +733,14 @@ bool DuiListBox::OnLButtonDown(POINT pt, UINT mkFlags)
     if (m_showCheckboxes && pt.x < m_rcItem.left + kCheckColW)
     {
         SetItemChecked(idx, !m_items[idx].checked);
+        return true;
+    }
+
+    // 删除列点击：只发通知，不动选中行、也不动自己的 model。要不要弹二次确认、
+    // 确认后删哪些东西，全由业务侧决定（见头文件 SetShowItemDelete 的说明）。
+    if (HitDeleteButton(pt, idx))
+    {
+        NotifyParent((UINT)DUITN_ITEMDELETE, (LPARAM)idx);
         return true;
     }
 
@@ -770,6 +857,16 @@ bool DuiListBox::OnMouseMove(POINT pt, UINT)
         return true;
     }
 
+    // 鼠标是否正压在某一行的删除叉上 —— 只影响那个叉的颜色，与行 hover 分开记，
+    // 因为在同一行里横向移进 / 移出叉也要重画。
+    const int deleteHover = (m_showItemDelete && idx >= 0 && HitDeleteButton(pt, idx))
+                            ? idx : -1;
+    if (deleteHover != m_deleteHoverIdx)
+    {
+        m_deleteHoverIdx = deleteHover;
+        Invalidate();
+    }
+
     if (idx == m_hoverIdx)
     {
         return false;
@@ -781,6 +878,11 @@ bool DuiListBox::OnMouseMove(POINT pt, UINT)
 
 bool DuiListBox::OnMouseLeave()
 {
+    if (m_deleteHoverIdx != -1)
+    {
+        m_deleteHoverIdx = -1;
+        Invalidate();
+    }
     if (m_hoverIdx != -1)
     {
         m_hoverIdx = -1;

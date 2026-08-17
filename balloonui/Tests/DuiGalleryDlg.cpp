@@ -9,7 +9,6 @@
 #include "DuiButtonTests.h"
 #include "DuiLabelTests.h"
 #include "DuiEditHostTests.h"
-#include "DuiRichEditHostTests.h"
 #include "DuiNinePatchTests.h"
 #include "DuiListBoxTests.h"
 #include "DuiTabTests.h"
@@ -76,7 +75,6 @@ int DuiGalleryDlg::OnCreate(LPCREATESTRUCT)
     AppendLog(DuiButtonTests::RunAll());
     AppendLog(DuiLabelTests::RunAll());
     AppendLog(DuiEditHostTests::RunAll());
-    AppendLog(DuiRichEditHostTests::RunAll());
     AppendLog(DuiNinePatchTests::RunAll());
     AppendLog(DuiListBoxTests::RunAll());
     AppendLog(DuiTabTests::RunAll());

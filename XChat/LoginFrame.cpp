@@ -152,9 +152,11 @@ private:
 // 进程时间 / 4 mod 360（约每秒转 90°）。配合品牌绿色，匹配某信"正在进入"
 // 截图。
 //
-// 驱动：DuiAnimMgr 的进程级 60Hz pulse —— 注册一个超长 anim（1 小时），
-// OnTick 里只读 GetTickCount 计算相位，不在乎 anim 的 from/to 值；mgr
-// 在 frame 析构（Clear）时一次性扔掉，spinner 不会泄露 anim。
+// 驱动：DuiAnimMgr 自带的进程级 16ms 共享脉冲 —— 注册一个超长 anim
+// （1 小时），OnTick 里只读 GetTickCount 计算相位，不在乎 anim 的
+// from/to 值。管理器在活跃列表由空变非空时自行装上定时器，宿主窗口不需要
+// 也不应该再周期性调 TickAll；mgr 在 frame 析构（Clear）时把这条 anim
+// 一次性扔掉，spinner 不会泄露 anim。
 // =============================================================================
 class Spinner : public DuiControl
 {
@@ -406,19 +408,12 @@ CString ResolveXmlPath(LPCTSTR fileName)
 LoginFrame::LoginFrame(Mode m) : m_mode(m) {}
 LoginFrame::~LoginFrame() = default;
 
-LRESULT LoginFrame::OnCreate_(UINT, WPARAM, LPARAM, BOOL& bHandled)
-{
-    // 60Hz 动画 pulse —— spinner 走的 DuiAnimMgr 需要 host 周期性 TickAll。
-    // 与 XChatMainFrame 用同一档（main.cpp 那边定义的 kAnimPulseTimerId
-    // 不在 .h 里暴露，所以这里另起一个本地 id；只要不和业务 timer 撞就行）。
-    SetTimer(0xA10, 16);
-    bHandled = FALSE;
-    return 0;
-}
-
+// 本 frame 不为 spinner 挂动画 pulse：spinner 注册的那条超长 DuiAnim 由
+// DuiAnimMgr 自带的 16ms 共享线程定时器推进，管理器在活跃列表由空变非空
+// 时装上定时器、列表清空时卸掉，宿主无须参与。下面 OnDestroy_ 里的
+// Clear() 既取消 spinner 的动画，也顺带卸掉那个共享定时器。
 LRESULT LoginFrame::OnDestroy_(UINT, WPARAM, LPARAM, BOOL& bHandled)
 {
-    KillTimer(0xA10);
     KillTimer(kTimerCloseSelf);
     DuiAnimMgr::Inst().Clear();
     ::PostQuitMessage(0);   // 退出当前登录消息循环，main.cpp 接着起下一段
@@ -428,11 +423,7 @@ LRESULT LoginFrame::OnDestroy_(UINT, WPARAM, LPARAM, BOOL& bHandled)
 
 LRESULT LoginFrame::OnTimer_(UINT, WPARAM wp, LPARAM, BOOL& bHandled)
 {
-    if (wp == 0xA10)
-    {
-        DuiAnimMgr::Inst().TickAll(::GetTickCount());
-    }
-    else if (wp == kTimerCloseSelf)
+    if (wp == kTimerCloseSelf)
     {
         KillTimer(kTimerCloseSelf);
         if (m_mode == Qr)

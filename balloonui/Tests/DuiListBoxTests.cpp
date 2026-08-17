@@ -55,6 +55,39 @@ static Result Test_LB_AddDeleteCount()
     return OK(_T("LB_AddDeleteCount"));
 }
 
+// Wheel consumption follows DuiScrollBar, which DuiListBox forwards to:
+// a list whose items all fit has an empty scroll range and must let the
+// wheel bubble to an outer scroll container; once the items overflow it
+// consumes the wheel, edge included. See DuiHost::DispatchMouseWheel.
+static Result Test_LB_WheelBubblesWhenItemsFit()
+{
+    DuiListBox lb;
+    lb.SetItemHeight(22);
+    lb.SetRect(RECT{ 0, 0, 300, 200 });
+    lb.AddItem(_T("a"));
+    lb.AddItem(_T("b"));
+    lb.AddItem(_T("c"));                 // 3 * 22 = 66 px, well under 200
+    EXPECT_INT(lb.GetScrollBar()->GetMax(), 0, _T("LB_Wheel/emptyRange"));
+    bool fits = lb.OnMouseWheel(POINT{ 10, 10 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)fits, 0, _T("LB_Wheel/fitsNotConsumed"));
+
+    for (int i = 0; i < 50; ++i)         // 53 * 22 = 1166 px, overflows
+    {
+        lb.AddItem(_T("more"));
+    }
+    if (lb.GetScrollBar()->GetMax() <= 0)
+    {
+        return Fail(_T("LB_WheelBubblesWhenItemsFit"), _T("expected a scrollable range after filling"));
+    }
+    bool overflow = lb.OnMouseWheel(POINT{ 10, 10 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)overflow, 1, _T("LB_Wheel/overflowConsumed"));
+
+    lb.GetScrollBar()->SetPos(lb.GetScrollBar()->GetMax());
+    bool atBottom = lb.OnMouseWheel(POINT{ 10, 10 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)atBottom, 1, _T("LB_Wheel/atBottomStillConsumed"));
+    return OK(_T("LB_WheelBubblesWhenItemsFit"));
+}
+
 // Insert in middle shifts selection.
 static Result Test_LB_InsertShiftsSel()
 {
@@ -443,6 +476,7 @@ CString RunAll()
         { _T("LB_OOBSafe"),           &Test_LB_OOBSafe           },
         { _T("LB_KeyboardNav"),       &Test_LB_KeyboardNav       },
         { _T("LB_ItemParam"),         &Test_LB_ItemParam         },
+        { _T("LB_WheelBubblesWhenItemsFit"), &Test_LB_WheelBubblesWhenItemsFit },
         { _T("VL_Defaults"),          &Test_VL_Defaults          },
         { _T("VL_RowCountClamps"),    &Test_VL_RowCountClamps    },
         { _T("VL_KeyboardPgUpDown"),  &Test_VL_KeyboardPgUpDown  },

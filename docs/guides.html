@@ -355,8 +355,8 @@
     </li>
     <li>7.3 输入
       <ul>
-        <li><a href="#DuiEditHost">DuiEditHost</a></li>
-        <li><a href="#DuiRichEditHost">DuiRichEditHost</a></li>
+        <li><a href="#DuiEdit">DuiEdit</a></li>
+        <li><a href="#DuiRichEdit">DuiRichEdit</a></li>
         <li><a href="#DuiSearchBox">DuiSearchBox</a></li>
         <li><a href="#DuiSpinBox">DuiSpinBox</a></li>
         <li><a href="#DuiSlider">DuiSlider</a></li>
@@ -440,7 +440,7 @@
 <p>典型使用场景（本仓库自带 demo 全部基于 balloonui）：</p>
 
 <ul>
-  <li><b>消息流 / 即时通讯类</b>（XChat 复刻某信、NewChatDemo、DemoChatBubble）：左导航 + 中列表 + 右内容三段式，自定义气泡 / 文件卡 / emoji 面板，richedit 输入框带表情和图片插入。</li>
+  <li><b>消息流 / 即时通讯类</b>（XChat 复刻某信、NewChatDemo、DemoChatBubble）：左导航 + 中列表 + 右内容三段式，自定义气泡 / 文件卡 / emoji 面板，富文本输入框带表情和图片插入。</li>
   <li><b>消费型多页面应用</b>（CloudMelodyDesktop 音乐 App "FangMusic"）：卡片网格、媒体播放器、Now-Playing、桌面歌词逐像素 alpha 浮窗、全屏沉浸模式、播放计时驱动。</li>
   <li><b>工具型 / 管理型 UI</b>（DemoTaskManager 任务管理器复刻、DuiGallery 控件展示库）：菜单 / Tab / 表格 / 树形 / 列表 / 设置项等"信息密集型"控件密集页面。</li>
   <li><b>视觉演示 / 单控件</b>（DemoCircularProgress、DemoFileTypeIcon、DemoNinePatchBg、DemoTextBadgeTile、DemoTreeViewLargeData）：每个 demo 聚焦一个控件或一种自绘技巧（GDI+ 抗锯齿、9-grid 拉伸、虚拟列表、文件类型图标等）。</li>
@@ -482,7 +482,7 @@
   </tr>
   <tr>
     <td><b>IME / 中文输入</b></td>
-    <td>原生（HWND-hosted EDIT / RichEdit 例外，<code>DuiEditHost</code>）</td>
+    <td>原生（文本框走系统文本服务，不需要真窗口）</td>
     <td>原生</td>
     <td>原生（成熟）</td>
     <td>原生</td>
@@ -517,8 +517,8 @@
 <p>提供 30+ 控件，关键设计：</p>
 
 <ul>
-  <li><b>单 HWND 模型</b>：整个 UI 树共用一个真窗口（<code>DuiHost</code>），子控件全部是逻辑节点（<code>DuiControl</code>），不创建 HWND，因此控件数量不受 GDI 句柄上限影响。</li>
-  <li><b>HWND-Hosted 例外</b>：需要 IME 输入法的文本控件（<code>DuiEditHost</code> / <code>DuiRichEditHost</code>）通过 <code>HwndHostControl</code> 适配器嵌入真 EDIT/RichEdit。</li>
+  <li><b>单 HWND 模型</b>：整个 UI 树共用一个真窗口（<code>DuiHost</code>），子控件全部是逻辑节点（<code>DuiControl</code>），不创建 HWND，因此控件数量不受 GDI 句柄上限影响。<b>这条规则没有例外</b> —— 2026-08-17 输入框改为无窗口实现之后，最后一个内嵌真子窗口的控件也随之消失，库内不再提供把真窗口接入控件树的设施。所有控件都由库直接绘制，都受父容器裁剪，也都按同一套绘制层级参与绘制。</li>
+  <li><b>文本框走系统文本服务</b>：单行 / 多行文本框（<code>DuiEdit</code>）与富文本框（<code>DuiRichEdit</code>）直接调用 Windows 自带的富文本排版引擎（text services），输入法、剪贴板、选区、撤销重做都由引擎提供，不需要为此创建真窗口。</li>
   <li><b>双缓冲绘制</b>：<code>DuiHost</code> 内置离屏 DC，控件直接画到 HDC，无闪烁。</li>
   <li><b>XML 声明式布局</b>：<code>DuiXmlBuilder</code> 把 XML 解析成控件树，业务可注册自定义标签工厂插入自绘节点。</li>
   <li><b>事件冒泡</b>：子控件通过 <code>NotifyParent(DUIN_*, extra)</code> 向上发 <code>WM_DUI_NOTIFY</code>。</li>
@@ -657,14 +657,14 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&amp;)
   <tr><td><code>&lt;button&gt;</code></td>   <td>DuiButton</td>        <td>交互</td><td>push / icon / checkbox / radio 四态</td></tr>
   <tr><td><code>&lt;slider&gt;</code></td>   <td>DuiSlider</td>        <td>交互</td><td>数值滑块</td></tr>
   <tr><td><code>&lt;switch&gt;</code></td>   <td>DuiSwitch</td>        <td>交互</td><td>iOS 风格圆角胶囊开关（150ms 动画）</td></tr>
-  <tr><td><code>&lt;edit&gt;</code></td>     <td>DuiEditHost</td>      <td>HWND</td><td>HWND-hosted 单/多行 EDIT</td></tr>
-  <tr><td><code>&lt;richedit&gt;</code></td> <td>DuiRichEditHost</td>  <td>HWND</td><td>HWND-hosted 富文本（图文 / 链接 / IME）</td></tr>
-  <tr><td><code>&lt;searchbox&gt;</code></td><td>DuiSearchBox</td>     <td>HWND</td><td>带放大镜 + 清除按钮的搜索框（含一个 EDIT）</td></tr>
-  <tr><td><code>&lt;spinbox&gt;</code></td>  <td>DuiSpinBox</td>       <td>HWND</td><td>整数微调（含一个 EDIT）</td></tr>
+  <tr><td><code>&lt;edit&gt;</code></td>     <td>DuiEdit</td>          <td>交互</td><td>无窗口单 / 多行纯文本输入框</td></tr>
+  <tr><td><code>&lt;richtext&gt;</code></td> <td>DuiRichEdit</td>      <td>交互</td><td>无窗口富文本（可被遮挡 / 自动增高 / 覆盖式滚动条）</td></tr>
+  <tr><td><code>&lt;searchbox&gt;</code></td><td>DuiSearchBox</td>     <td>交互</td><td>带放大镜 + 清除按钮的搜索框（本身就是一个输入框）</td></tr>
+  <tr><td><code>&lt;spinbox&gt;</code></td>  <td>DuiSpinBox</td>       <td>交互</td><td>整数微调（内含一个输入框）</td></tr>
   <tr><td><code>&lt;treeview&gt;</code></td> <td>DuiTreeView</td>      <td>列表</td><td>层级树 / 多列表格混合（XML 仅配 <code>&lt;column&gt;</code>，节点 C++ 添加）</td></tr>
 </table>
 
-<p class="note"><b>HWND 类</b> 控件内部寄宿一个真 HWND（OS 原生 EDIT / RICHEDIT），构造完后 caller 必须在 host HWND 就绪后调用 <code>EnsureCreated(hostHwnd)</code> 一次（参见 <a href="#xml-ensure-created">§3.4</a>）。其它类别都是无 HWND 的纯 DUI 控件，构造即可用。</p>
+<p class="note">表里的全部标签都建出<b>无 HWND 的纯 DUI 控件</b>，构造完即可用，没有任何额外的"创建"步骤。<code>&lt;edit&gt;</code> / <code>&lt;searchbox&gt;</code> / <code>&lt;spinbox&gt;</code> / <code>&lt;combobox&gt;</code> 在 2026-08-17 之前内嵌真的 Win32 子窗口，需要调用方补一次 <code>EnsureCreated(hostHwnd)</code>；改为无窗口实现之后这条约定作废（参见 <a href="#xml-ensure-created">§3.4</a>）。</p>
 
 <h3 id="xml-common-attrs">3.2 通用属性（所有标签都支持）</h3>
 
@@ -883,49 +883,60 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&amp;)
   <tr><td><code>knob-color</code></td><td>"r,g,b"</td>  <td>滑块色。默认 RGB(255,255,255)（白）。</td></tr>
 </table>
 
-<p class="note"><b>动画依赖：</b>切换走 <code>DuiAnimMgr</code> 驱动 —— host 必须周期性调 <code>balloonwjui::DuiAnimMgr::Inst().TickAll(::GetTickCount())</code>（典型 16ms <code>WM_TIMER</code> pulse）才能看到中间帧。<code>DuiGallery</code> 的 <code>GalleryFrame</code> 已经接通这个 pulse，业务侧的主对话框 / 顶层 frame 也要补上一份；不接通的话最终态仍然正确，只是没有动画过渡。</p>
+<p class="note"><b>动画驱动：</b>切换走 <code>DuiAnimMgr</code>，而 <code>DuiAnimMgr</code> 自带一个 16ms 的共享脉冲定时器：活跃动画列表由空变非空时自行装上，动画全部播完（或调 <code>Clear()</code>）时自行卸掉。因此宿主窗口<u>不需要也不应该</u>再周期性调 <code>TickAll</code>，只要所在线程在正常泵消息，中间帧就会自己跑出来。<code>TickAll</code> 仍是 public 的，用途是<b>单元测试里手动驱动</b>动画（无 HWND 也能跑）。</p>
 
 <p><b>事件</b>：<code>DUIN_VALUECHANGED</code>（<code>extra</code> = 1（on）/ 0（off））—— 鼠标点击 / Space / Enter 翻转时触发；<code>SetChecked()</code> 编程调用<u>不</u>触发，匹配 <code>DuiButton</code> checkbox 行为。</p>
 
-<!-- ─── HWND-hosted ─── -->
+<!-- ─── 文本输入 ─── -->
 
-<h4 id="xml-edit">3.3.12 <code>&lt;edit&gt;</code> — DuiEditHost</h4>
+<h4 id="xml-edit">3.3.12 <code>&lt;edit&gt;</code> — DuiEdit（无窗口）</h4>
 
 <table>
   <tr><th>属性</th><th>类型</th><th>含义 / 默认值</th></tr>
   <tr><td><code>placeholder</code></td><td>string</td>  <td>空值占位提示文字。</td></tr>
-  <tr><td><code>password</code></td>   <td>bool</td>    <td>密码模式（显示 ●）。默认 false。</td></tr>
+  <tr><td><code>password</code></td>   <td>bool</td>    <td>密码模式（内容以遮蔽字符显示）。默认 false。</td></tr>
   <tr><td><code>multiline</code></td>  <td>bool</td>    <td>多行编辑。默认 false。</td></tr>
 </table>
 
-<p><b>EnsureCreated 约束</b>：<code>&lt;edit&gt;</code> 内部寄宿一个真 EDIT HWND，必须在 host HWND 就绪后调用 <code>edit-&gt;EnsureCreated(hostHwnd)</code> 才会真正创建出来。详见 <a href="#xml-ensure-created">§3.4</a>。</p>
+<p><b>属性可以在运行期随时改</b>：密码、多行、只读、自动换行、最大长度这几项在无窗口实现里只是属性位，调 setter 立即生效，不需要销毁重建控件。2026-08-17 之前它们是创建期固化的窗口风格位，改一次就得重建整个子窗口。</p>
+
+<p><b>不需要 EnsureCreated</b> —— 本控件没有子窗口，builder 建出来就能用。详见 <a href="#xml-ensure-created">§3.4</a>。</p>
+
+<p class="note">builder 实际建出来的类型是兼容外壳 <code>DuiEditHost</code>（它是 <code>DuiEdit</code> 的子类，只多一个占位文字显示开关）。这样存量代码里大量的 <code>dynamic_cast&lt;DuiEditHost*&gt;</code> 仍然能拿到指针。新写的转换用 <code>DuiEdit*</code> 即可，两者都成立。</p>
 
 <p><b>事件</b>：</p>
 <table>
   <tr><th>code</th><th>触发时机</th></tr>
-  <tr><td><code>DUIN_VALUECHANGED</code></td><td>EN_CHANGE — 文字变化（每输入一字符）</td></tr>
-  <tr><td><code>DUIN_SETFOCUS</code></td>   <td>EN_SETFOCUS</td></tr>
-  <tr><td><code>DUIN_KILLFOCUS</code></td>  <td>EN_KILLFOCUS</td></tr>
+  <tr><td><code>DUIN_VALUECHANGED</code></td><td>文字变化（用户键入、输入法上屏、粘贴，以及程序调 <code>SetText</code>）</td></tr>
+  <tr><td><code>DUIN_SETFOCUS</code></td>   <td>拿到键盘焦点</td></tr>
+  <tr><td><code>DUIN_KILLFOCUS</code></td>  <td>失去键盘焦点</td></tr>
+  <tr><td><code>DUIN_EDIT_ENTER</code></td> <td>单行模式下按了回车（多行模式不发，那里回车是换行）</td></tr>
+  <tr><td><code>DUIN_EDIT_ESCAPE</code></td><td>按了 Esc（单行多行都发）</td></tr>
+  <tr><td><code>DUIN_EDIT_LEFT_ICON_CLICK</code> / <code>DUIN_EDIT_RIGHT_ICON_CLICK</code></td><td>点击了对应侧的内联图标（须先 <code>SetIconClickable</code>）</td></tr>
 </table>
 
-<h4 id="xml-richedit">3.3.13 <code>&lt;richedit&gt;</code> — DuiRichEditHost</h4>
+<h4 id="xml-richtext">3.3.13 <code>&lt;richtext&gt;</code> — DuiRichEdit（无窗口）</h4>
+
+<p><b>基础文本属性</b>：<code>text</code>（初始内容）、<code>placeholder</code>（空值占位文字）、<code>read-only</code>（只读，默认 false）、<code>max-length</code>（最大字符数，0 表示不限制）、<code>multi-line</code>（多行，默认 true）、<code>word-wrap</code>（自动换行，默认 true）、<code>text-color</code> / <code>bg-color</code>（<code>"r,g,b"</code> 形式的字色与底色）、<code>margins</code>（<code>"l,t,r,b"</code> 形式的内边距）。这几项都可以在运行期随时改，不需要重建控件。</p>
+
+<p>本控件<b>独有的属性</b>：</p>
 
 <table>
   <tr><th>属性</th><th>类型</th><th>含义 / 默认值</th></tr>
-  <tr><td><code>placeholder</code></td>   <td>string</td>  <td>空值占位文字。</td></tr>
-  <tr><td><code>read-only</code></td>     <td>bool</td>    <td>只读。默认 false。</td></tr>
-  <tr><td><code>max-length</code></td>    <td>int</td>     <td>最大字符数。0 = 无限制（默认）。</td></tr>
-  <tr><td><code>multi-line</code></td>    <td>bool</td>    <td>多行（必须在 EnsureCreated 前设；默认 true 即可——RichEdit 多行场景为主）。</td></tr>
-  <tr><td><code>word-wrap</code></td>     <td>bool</td>    <td>自动换行。同样 pre-Create。默认 true。</td></tr>
-  <tr><td><code>text-color</code></td>    <td>"r,g,b"</td> <td>默认字色。默认 RGB(30,30,30)。</td></tr>
-  <tr><td><code>bg-color</code></td>      <td>"r,g,b"</td> <td>背景色。默认白。</td></tr>
-  <tr><td><code>auto-url-detect</code></td><td>bool</td>   <td>自动识别 URL 并蓝色下划线。默认 false。识别后点击发 <code>DUIN_RE_LINKCLICK</code>。</td></tr>
-  <tr><td><code>margins</code></td>       <td>"l,t,r,b"</td><td>EDIT 内边距。默认 4,2,4,2。</td></tr>
+  <tr><td><code>show-border</code></td>  <td>bool</td>    <td>是否画 1px 外边框。默认 true。设 false 可与父容器底色融合。</td></tr>
+  <tr><td><code>focusable</code></td>    <td>bool</td>    <td>是否接受键盘焦点。默认 true。纯展示区建议设 false，否则窗口一显示光标就落在它身上。</td></tr>
+  <tr><td><code>paste-plain</code></td>  <td>bool</td>    <td>Ctrl+V 是否默认只粘纯文本。默认 false。</td></tr>
+  <tr><td><code>drag-drop</code></td>    <td>bool</td>    <td>是否允许把文字拖进 / 拖出。默认 true。</td></tr>
+  <tr><td><code>context-menu</code></td> <td>bool</td>    <td>是否响应右键弹出菜单。默认 true。</td></tr>
+  <tr><td><code>v-scroll</code> / <code>h-scroll</code></td><td><code>auto</code>｜<code>always</code>｜<code>never</code></td><td>滚动条策略。默认 <code>auto</code>（内容装不下才出现，停手约 0.8 秒后淡出）。滚动条是<b>覆盖式</b>的，任何时候都不占内容宽度。<code>never</code> 只是没有可拖的滑块，滚轮和键盘照常滚。</td></tr>
+  <tr><td><code>auto-grow</code></td>    <td>bool</td>    <td>是否随内容自动增高。默认 true。要真正生效，父容器给本控件的布局提示必须是<b>自动档</b>（<code>Hint().Auto()</code>）；写成固定高度的话自动增高不起作用。</td></tr>
+  <tr><td><code>auto-grow-min</code> / <code>auto-grow-max</code></td><td>int (px)</td><td>自动增高的上下限。下限 &lt;= 0 按一行高度算，上限 &lt;= 0 表示不限（到顶之后不再长高，改出滚动条）。</td></tr>
+  <tr><td><code>auto-grow-lines</code></td><td>"min,max"</td><td>按行数设上下限的便捷写法，内部用当前默认字体的行高换算。<b>与像素版同时写时以本项为准。</b>混排不同字号时换算不准，那种场景请用像素版。</td></tr>
 </table>
 
-<p><b>事件</b>：同 <code>&lt;edit&gt;</code> 的 3 个 + <code>DUIN_RE_LINKCLICK</code>（<code>auto-url-detect=true</code> 时点击 URL，<code>extra</code> 是 <code>ENLINK*</code>）。</p>
+<p><b>事件</b>：<code>DUIN_VALUECHANGED</code>（内容变化）、<code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code>、<code>DUIN_RICHTEXT_MENUCOMMAND</code>（用户选了右键菜单里的自定义项，<code>extra</code> 是该项编号）。</p>
 
-<p>富文本 / RTF / 图片 / 引用块插入需 C++ 侧调具体方法，XML 不暴露。EnsureCreated 同 <code>&lt;edit&gt;</code>。</p>
+<p><b>不需要 EnsureCreated</b> —— 本控件没有子窗口，构造完即可用。</p>
 
 <h4 id="xml-searchbox">3.3.14 <code>&lt;searchbox&gt;</code> — DuiSearchBox</h4>
 
@@ -940,7 +951,7 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&amp;)
 
 <p><b>事件</b>：<code>DUIN_VALUECHANGED</code> —— 文字变化或点击 × 清空时。</p>
 
-<p>EnsureCreated 同 <code>&lt;edit&gt;</code>（searchbox 内部含一个 <code>DuiEditHost</code> 子节点）。</p>
+<p><b>不需要 EnsureCreated</b>（本控件就是一个 <code>DuiEdit</code>，同 <code>&lt;edit&gt;</code>）。</p>
 
 <h4 id="xml-spinbox">3.3.15 <code>&lt;spinbox&gt;</code> — DuiSpinBox</h4>
 
@@ -955,7 +966,7 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&amp;)
 
 <p><b>事件</b>：<code>DUIN_VALUECHANGED</code>（<code>extra</code> = 新值）—— ▲▼ 点击触发；用户在 EDIT 里手输入后的提交需 caller 在 <code>DUIN_KILLFOCUS</code> 里 <code>SetValue(_ttoi(GetEdit()-&gt;GetText()))</code>。</p>
 
-<p>EnsureCreated 同 <code>&lt;edit&gt;</code>（spinbox 内部含一个 <code>DuiEditHost</code> 子节点）。</p>
+<p><b>不需要 EnsureCreated</b>（spinbox 内部含一个 <code>DuiEdit</code> 子节点，同 <code>&lt;edit&gt;</code>）。</p>
 
 <h4 id="xml-treeview">3.3.16 <code>&lt;treeview&gt;</code> — DuiTreeView（仅多列模式 XML 配列）</h4>
 
@@ -993,30 +1004,29 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&amp;)
 
 <p><b>事件 / cell 类型 / 编辑闸</b>详见 <a href="#DuiTreeView">§7 DuiTreeView</a>。</p>
 
-<h3 id="xml-ensure-created">3.4 HWND-hosted 控件的 EnsureCreated 约定</h3>
+<h3 id="xml-ensure-created">3.4 EnsureCreated 约定已作废</h3>
 
-<p>4 个 HWND 类标签（<code>&lt;edit&gt;</code> / <code>&lt;richedit&gt;</code> / <code>&lt;searchbox&gt;</code> / <code>&lt;spinbox&gt;</code>）内部寄宿一个真 EDIT/RICHEDIT 子 HWND。这些 HWND 必须有<u>已创建的父 HWND</u> 才能 <code>CreateWindow</code> 出来；XML 解析阶段控件还没挂上 host，所以 builder <b>不会</b>主动创建这些子 HWND。</p>
+<p>2026-08-17 之前，4 个输入类标签（<code>&lt;edit&gt;</code> / <code>&lt;searchbox&gt;</code> / <code>&lt;spinbox&gt;</code> / <code>&lt;combobox&gt;</code>）内部寄宿一个真的 Win32 输入框子窗口。这些子窗口必须有<u>已创建的父窗口</u>才能建出来，而 XML 解析阶段控件还没挂上 host，所以 builder 不会主动创建它们，调用方必须在 host 有了真窗口之后自己补一次 <code>EnsureCreated(hostHwnd)</code>。</p>
 
-<p>正确的 wiring 顺序：</p>
-<ol>
-  <li><code>FromString(xml)</code> 拿到 root（控件树构造好，但 HWND 类还都是<u>裸 DUI 控件</u>）。</li>
-  <li><code>host.SetRoot(std::move(root))</code> 或 <code>frame.SetClientContent(...)</code> —— 控件树挂到 host 上。</li>
-  <li>host 必须已经 <code>Create(...)</code> 过，确保 <code>m_hWnd</code> 有效。</li>
-  <li>遍历 root 找到所有 HWND 类控件，对每个调 <code>EnsureCreated(host.m_hWnd)</code>。可以 <code>FindChildById(id)</code> 拿到指针，也可以自己写 visitor 走树。</li>
-</ol>
+<p>输入框改为无窗口实现（<a href="#DuiEdit">DuiEdit</a>）之后，<b>这条约定整个作废</b>：</p>
+
+<ul>
+  <li>builder 建出来的输入框<b>构造完就能用</b> —— 可以立即设文本、量尺寸、改属性，不依赖任何窗口。</li>
+  <li>正确的 wiring 顺序只剩两步：<code>FromString(xml)</code> 拿到 root，然后 <code>host.SetRoot(std::move(root))</code> 或 <code>frame.SetClientContent(...)</code> 挂上去。没有第三步。</li>
+  <li>兼容外壳 <code>DuiEditHost</code> 上仍留着一个 <code>EnsureCreated</code>，是<b>空实现、恒返回成功</b>，纯粹为了让存量调用点零改动通过编译。新代码不要再调它；存量调用点可以就地删除，删除顺序不影响功能。</li>
+  <li>取内部子窗口句柄的 <code>GetHostedHwnd</code> 已经<b>删除</b>。无窗口实现下它无从返回有意义的值，保留成返回空句柄的话，所有调用点都会在运行期静默失效。删掉它，让这些地方变成编译错误，逐个改写成无窗口的等价做法：取焦点用 <code>SetFocus</code>，全选用 <code>SelectAll</code>，判断焦点用 <code>IsFocused</code>。</li>
+</ul>
 
 <pre><code>auto root = balloonwjui::DuiXmlBuilder::FromString(xml);
-host.SetRoot(std::move(root));               <em>// host 必须已 Create</em>
+host.SetRoot(std::move(root));
 
-<em>// 找到 id=100 的 edit，让它真正建出 HWND</em>
-auto* edit = static_cast&lt;balloonwjui::DuiEditHost*&gt;(
+<em>// 找到 id=100 的 edit，直接用 —— 没有"创建"这一步</em>
+auto* edit = static_cast&lt;balloonwjui::DuiEdit*&gt;(
     host.GetRoot()-&gt;FindControlById(100));
 if (edit)
 {
-    edit-&gt;EnsureCreated(host.m_hWnd);
+    edit-&gt;SetText(_T("hello"));
 }</code></pre>
-
-<p>没调 <code>EnsureCreated</code> 的 HWND 控件不会崩，但<u>不显示真 EDIT 控件</u>（仍是裸 DUI 节点 + 占位绘制），用户也无法输入。</p>
 
 <h3 id="xml-comments">3.5 XML 解析的边界条件</h3>
 
@@ -1075,7 +1085,7 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
   <li>字体：<b>Microsoft YaHei 9pt</b>（GB2312）— 由 <code>DuiResMgr</code> 提供</li>
   <li>圆角：button 8px、bubble 8px、chip 9-11px</li>
   <li>品牌色：<code>#2D6CDF</code>（蓝）、<code>#4CC7A1</code>（绿，DuiAvatar/DuiBadge 默认）</li>
-  <li>I-beam 光标在 EditHost / RichEditHost 上自动出现</li>
+  <li>I-beam 光标在 DuiEdit / DuiRichEdit 上自动出现</li>
   <li>所有非轴向图形（圆、对角线、多边形）通过 <code>DuiPaintAA</code> 抗锯齿绘制</li>
 </ul>
 
@@ -1088,10 +1098,6 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
 <p>一切"逻辑控件"（无 HWND，仅参与 paint / hit-test / event）都派生自 <code>DuiControl</code>。它们由父 <code>DuiHost</code> 共用一个真窗口绘制。</p>
 
 <pre class="tree"><b>DuiControl</b>                      <em>// 逻辑节点基类（无 HWND）</em>
-│
-├── <b>HwndHostControl</b>            <em>// 嵌入真 HWND 的适配器</em>
-│   ├── DuiEditHost              <em>// 真 EDIT，IME 友好</em>
-│   └── DuiRichEditHost          <em>// 真 RICHEDIT_CLASS</em>
 │
 ├── <b>DuiLayout</b>                  <em>// 容器抽象基类</em>
 │   ├── DuiVBox                  <em>// 纵向盒</em>
@@ -1111,8 +1117,11 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
 ├── DuiGroupBox                  <em>// 带标题分组框</em>
 │
 ├── <i>// — 输入 —</i>
-├── DuiSearchBox                 <em>// M7+ 改为继承 DuiEditHost，thin preset</em>
-├── DuiSpinBox                   <em>// 内嵌 EDIT（聚合，非继承）</em>
+├── DuiRichEdit                  <em>// 无窗口富文本，直接用系统文本服务</em>
+│   └── DuiEdit                  <em>// 无窗口普通输入框（单行 / 多行纯文本）</em>
+│       └── DuiEditHost          <em>// 兼容外壳，等同于 DuiEdit</em>
+│           └── DuiSearchBox     <em>// 装好放大镜 + 清除按钮的输入框</em>
+├── DuiSpinBox                   <em>// 内嵌一个输入框（聚合，非继承）</em>
 ├── DuiSlider                    <em>// 横/竖 滑块</em>
 ├── DuiSwitch                    <em>// iOS 风格圆角胶囊开关（150ms 动画）</em>
 ├── DuiProgressBar               <em>// 进度条</em>
@@ -1135,7 +1144,9 @@ auto root = balloonwjui::DuiXmlBuilder::FromString(xml.c_str(), fac);</code></pr
     └── DuiScrollView            <em>// 内置滚动容器</em>
 </pre>
 
-<p class="note"><b>注意</b>：<code>DuiSpinBox</code> 内部嵌了真 EDIT 但用<u>聚合</u>方式（不继承 HwndHostControl），DUI 部分（上下三角）用聚合更清爽。<code>DuiSearchBox</code> 早期同款，M7+ 重构成<u>继承 DuiEditHost</u>（thin preset）—— DuiEditHost 加了<a href="#DuiEditHost-IconApi">原生左/右内联图标 API</a> 后，把 magnifier / × 直接装成 icon，比重写 paint / Layout / HitTest 更精简。</p>
+<p class="note"><b>注意</b>：<code>DuiSpinBox</code> 内部嵌了一个输入框，但用<u>聚合</u>方式（持有一个子控件而不是继承），因为它自绘的上下三角与输入框是并列关系，聚合更清爽。<code>DuiSearchBox</code> 早期同款，后来重构成<u>继承</u>输入框 —— 输入框有了<a href="#DuiEdit-IconApi">左 / 右内联图标 API</a> 之后，放大镜与清除按钮直接装成图标即可，比重写绘制、布局、命中测试三套逻辑精简得多。</p>
+
+<p class="note"><b>关于 <code>DuiEditHost</code></b>：这个类名下曾经是一个内嵌真 Win32 输入框子窗口的控件。2026-08-17 输入框改为无窗口实现之后，它退化成 <code>DuiEdit</code> 的一层薄兼容外壳，只多一个占位文字显示开关，为的是让两个程序里几百处存量调用零改动通过编译。<b>新代码一律直接用 <code>DuiEdit</code>。</b></p>
 
 <h3>5.2 真窗口链 — <code>DuiHost</code> 体系</h3>
 <p>每一个"真 Win32 窗口"都派生自 <code>DuiHost</code>。<code>DuiHost</code> 自己又派生自 ATL 的 <code>CWindowImpl</code>，所以可以直接用 <code>Create</code> / <code>SubclassWindow</code> / <code>m_hWnd</code> 这些 ATL 套路。</p>
@@ -1417,7 +1428,7 @@ menu.AddItem(IDM_DEL,   _T("Delete"), _T("Del"), /*danger*/ true);
 <table class="ev-table">
   <tr><th>会发事件的控件</th><th>不发事件（仅渲染 / 容器 / 引擎）</th></tr>
   <tr><td>
-    DuiButton, DuiLabel(链接模式), DuiEditHost, DuiRichEditHost,
+    DuiButton, DuiLabel(链接模式), DuiEdit, DuiRichEdit,
     DuiSearchBox, DuiSpinBox, DuiSlider, DuiProgressBar, DuiComboBox,
     DuiListBox, DuiTreeView, DuiTab, DuiTabPage, DuiSplitter,
     DuiScrollBar, DuiEmojiPanel, DuiMenu
@@ -1445,8 +1456,8 @@ menu.AddItem(IDM_DEL,   _T("Delete"), _T("Del"), /*danger*/ true);
   <a href="#DuiAvatar">DuiAvatar</a>
   <a href="#DuiSeparator">DuiSeparator</a>
   <a href="#DuiGroupBox">DuiGroupBox</a>
-  <a href="#DuiEditHost">DuiEditHost</a>
-  <a href="#DuiRichEditHost">DuiRichEditHost</a>
+  <a href="#DuiEdit">DuiEdit</a>
+  <a href="#DuiRichEdit">DuiRichEdit</a>
   <a href="#DuiSearchBox">DuiSearchBox</a>
   <a href="#DuiSpinBox">DuiSpinBox</a>
   <a href="#DuiSlider">DuiSlider</a>
@@ -1478,7 +1489,7 @@ menu.AddItem(IDM_DEL,   _T("Delete"), _T("Del"), /*danger*/ true);
    │
    └─ Layout 容器（DuiVBox / DuiHBox / DuiGrid / DuiSplitter / DuiGroupBox / DuiDock）
       ├─ Leaf 控件（DuiButton / DuiLabel / DuiAvatar / DuiSlider / ...）
-      ├─ HWND-寄宿控件（DuiEditHost / DuiRichEditHost / DuiSearchBox / DuiSpinBox） + EnsureCreated
+      ├─ 文本输入（DuiEdit / DuiRichEdit / DuiSearchBox / DuiSpinBox）
       ├─ 列表 / Tab（DuiListBox / DuiTreeView / DuiTab + DuiTabPage）
       └─ 嵌套 Layout 容器（VBox 套 HBox 套 Grid ...）</code></pre>
 
@@ -1534,7 +1545,7 @@ host.SetRoot(std::move(root));            // 入口 ① 用 host.SetRoot
 // 或 popup.SetContent(std::move(root));         // 入口 ③ 用 popup.SetContent
 </code></pre>
 
-<p class="note"><b>HWND-寄宿控件的 EnsureCreated</b>：<code>DuiEditHost</code> / <code>DuiRichEditHost</code> / <code>DuiSearchBox</code> / <code>DuiSpinBox</code> 内部寄宿一个真 EDIT/RICHEDIT 子 HWND，必须在 <code>host.Create</code>（已经有真 HWND）<u>之后</u>对每个寄宿控件调一次 <code>EnsureCreated(host.m_hWnd)</code>。详见 <a href="#xml-ensure-created">§3.4</a>。</p>
+<p class="note"><b>输入框不需要额外的创建步骤</b>：<code>DuiEdit</code> / <code>DuiRichEdit</code> / <code>DuiSearchBox</code> / <code>DuiSpinBox</code> / <code>DuiComboBox</code> 全是无窗口控件，挂进树里就能用。2026-08-17 之前它们内嵌真的 Win32 子窗口，需要在 <code>host.Create</code> 之后逐个调 <code>EnsureCreated(host.m_hWnd)</code>，现在这一步已经取消。详见 <a href="#xml-ensure-created">§3.4</a>。</p>
 
 <!-- =================== 布局容器 =================== -->
 <h2>7.1 布局容器</h2>
@@ -2267,27 +2278,39 @@ host.SetRoot(std::move(root));
 <!-- =================== 输入 =================== -->
 <h2>7.3 输入</h2>
 
-<div class="control" id="DuiEditHost">
-  <h3>DuiEditHost <span class="tag hwnd">HWND-hosted</span></h3>
+<div class="control" id="DuiEdit">
+  <h3>DuiEdit <span class="tag dui">纯 DUI</span></h3>
   <figure class="ctl-fig">
-    <img src="images/ctl-edit-states.png" alt="DuiEditHost 4 状态">
-    <figcaption>左→右：占位符（空）/ 已填值 / focus 高亮 / disabled。EDIT 内文字在屏外快照中可能被裁掉，实际运行时正常。</figcaption>
+    <img src="images/ctl-edit-states.png" alt="DuiEdit 4 状态">
+    <figcaption>左→右：占位文字（空）/ 已填值 / 焦点高亮 / 禁用。</figcaption>
   </figure>
-  <p>纯文本单行 / 多行编辑控件。<b>因为需要 IME 输入法</b>，内部嵌入真 EDIT HWND（通过 <code>HwndHostControl</code> 适配器）。</p>
+  <p>纯文本单行 / 多行输入框，<b>没有自己的窗口</b>。它是 <a href="#DuiRichEdit">DuiRichEdit</a> 的子类：排版、光标、选区、输入法、剪贴板、右键菜单这些能力全部由基类提供（基类直接调用 Windows 自带的富文本排版引擎），本类只补上"普通输入框"相对于富文本框多出来的那部分语义 —— 单行时回车不换行、左右两侧的内联图标栏、密码框的显隐切换按钮、单行文字垂直居中。</p>
 
-  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。<u>挂入后还须在 host HWND 就绪时调一次</u> <code>edit-&gt;EnsureCreated(host.m_hWnd)</code> 才能真正建出 EDIT 子 HWND（详见 <a href="#xml-ensure-created">§3.4</a>）。</p>
+  <p class="note"><b><code>DuiEditHost</code> 是保留下来的兼容名。</b>这个类名下曾经是一个内嵌真 Win32 输入框子窗口的控件；2026-08-17 输入框改为无窗口实现之后，它退化成 <code>DuiEdit</code> 的一层薄外壳（只多一个占位文字显示开关），为的是让存量调用零改动通过编译。二者是同一个控件，本节的全部内容对它同样成立。<b>新代码一律直接用 <code>DuiEdit</code>。</b></p>
+
+  <h4>无窗口化带来的变化</h4>
+  <table>
+    <tr><th>能力</th><th>成立的原因</th></tr>
+    <tr><td>可以被其它控件遮挡，也可以放进滚动容器 / 页签 / 弹出层</td><td>没有子窗口，父容器的裁剪与层次顺序对它照常生效</td></tr>
+    <tr><td>支持圆角、半透明背景，可以跟随布局做动画</td><td>底色与边框都由控件自己绘制，不再受系统输入框的画法约束</td></tr>
+    <tr><td>密码 / 多行 / 只读 / 自动换行等属性可以在运行期随时切换</td><td>这些在无窗口方案里只是属性位，改完立即生效；旧实现里它们是创建期固化的窗口风格位，改一次就得销毁重建整个子窗口</td></tr>
+    <tr><td>同一个窗口里可以放很多个实例</td><td>不消耗窗口句柄</td></tr>
+    <tr><td>不需要 <code>EnsureCreated</code></td><td>排版引擎不依赖任何窗口，构造函数里就建好了，构造完就能设文本、量尺寸</td></tr>
+  </table>
+
+  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。挂进去就能用，没有额外的创建步骤。</p>
 
   <h4>代码创建</h4>
-<pre><code>auto edit = std::make_unique&lt;balloonwjui::DuiEditHost&gt;();
+<pre><code>auto edit = std::unique_ptr&lt;balloonwjui::DuiEdit&gt;(new balloonwjui::DuiEdit());
 edit-&gt;SetCtrlId(100);
 edit-&gt;SetPlaceholder(_T("输入用户名"));
 edit-&gt;SetMultiLine(false);
 edit-&gt;SetPassword(false);
-balloonwjui::DuiEditHost* editRaw = edit.get();
+edit-&gt;SetMaxLength(32);
+balloonwjui::DuiEdit* editRaw = edit.get();
 vbox-&gt;AddChild(std::move(edit), balloonwjui::DuiLayout::Hint().Fixed(28));
 
-// host.Create(...) 之后调一次：
-editRaw-&gt;EnsureCreated(host.m_hWnd);
+editRaw-&gt;SetText(_T("hello"));   // 不需要任何"创建"调用
 </code></pre>
   <h4>XML 创建</h4>
 <pre><code>&lt;vbox padding="12" gap="6"&gt;
@@ -2296,29 +2319,37 @@ editRaw-&gt;EnsureCreated(host.m_hWnd);
     &lt;edit id="102" multiline="true"         weight="1"/&gt;
 &lt;/vbox&gt;
 </code></pre>
-<pre><code>// caller 侧（注意 EnsureCreated）：
+<pre><code>// caller 侧：挂上去就完了
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-// host HWND 就绪后，对每个 &lt;edit&gt; 节点调一次 EnsureCreated：
-for (UINT id : { 100u, 101u, 102u }) {
-    if (auto* e = static_cast&lt;balloonwjui::DuiEditHost*&gt;(host.GetRoot()-&gt;FindControlById(id)))
-        e-&gt;EnsureCreated(host.m_hWnd);
-}
+
+auto* e = static_cast&lt;balloonwjui::DuiEdit*&gt;(host.GetRoot()-&gt;FindControlById(100));
+e-&gt;SetText(_T("balloonwj"));
 </code></pre>
   <table>
-    <tr><td><code>SetText / GetText</code></td><td>文本内容（同步 EDIT）</td></tr>
+    <tr><td><code>SetText / GetText</code></td><td>文本内容。<code>SetText</code> 会发一条 <code>DUIN_VALUECHANGED</code></td></tr>
+    <tr><td><code>SetTextNoNotify</code></td><td>设值但不发通知。用于"回填"这类程序侧动作，避免触发本不该有的业务响应</td></tr>
     <tr><td><code>SetPlaceholder</code></td><td>空文本时显示的灰色提示</td></tr>
-    <tr><td><code>SetPassword(bool)</code></td><td>密码模式（显示 *）</td></tr>
-    <tr><td><code>SetMultiLine(bool)</code></td><td>多行</td></tr>
-    <tr><td><code>SetReadOnly / SetMaxLength</code></td><td>只读 / 长度限制</td></tr>
+    <tr><td><code>SetPassword(bool)</code></td><td>密码模式（内容以遮蔽字符显示）。<u>可以随时改</u>，不需要重建控件</td></tr>
+    <tr><td><code>SetShowEyeToggle(bool)</code> / <code>SetPasswordRevealed(bool)</code></td><td>右侧显隐切换按钮的开关 / 当前是否明文显示。仅密码框下有意义</td></tr>
+    <tr><td><code>SetMultiLine(bool)</code></td><td>多行。<u>可以随时改</u></td></tr>
+    <tr><td><code>SetReadOnly / SetMaxLength</code></td><td>只读 / 长度限制。<u>都可以随时改</u></td></tr>
+    <tr><td><code>SetVerticalCenter(bool)</code></td><td>单行模式下文字是否在控件高度内垂直居中。默认 true；多行模式下无效果</td></tr>
+    <tr><td><code>SetBgColor</code> / <code>SetShowBorder</code></td><td>整体底色 / 是否画 1px 边框</td></tr>
+    <tr><td><code>SetCtlFont(family, sizePx, ...)</code></td><td>按字体名与像素字号设置控件字体</td></tr>
+    <tr><td><code>SetNotificationsSuppressed(bool)</code></td><td>掐掉本控件对外发出的全部通知。供下拉框、数字框这类复合控件把内嵌输入框的通知屏蔽掉</td></tr>
   </table>
   <h4>事件</h4>
   <table class="ev-table">
     <tr><th>code</th><th>触发</th><th>extra (LPARAM)</th></tr>
-    <tr><td><code>DUIN_VALUECHANGED</code></td><td>EDIT 内容变化（响应每次 <code>EN_CHANGE</code>，包括 IME 上屏每个汉字、剪切板粘贴、用户键入）。可在 handler 里调 <code>GetText()</code> 拿最新值。</td><td>0</td></tr>
-    <tr><td><code>DUIN_SETFOCUS</code></td><td>EDIT 拿到键盘焦点（<code>EN_SETFOCUS</code>）</td><td>0</td></tr>
-    <tr><td><code>DUIN_KILLFOCUS</code></td><td>EDIT 失焦（<code>EN_KILLFOCUS</code>），适合做"提交 / 校验 / 清空 placeholder 状态"</td><td>0</td></tr>
+    <tr><td><code>DUIN_VALUECHANGED</code></td><td>文字变化 —— 用户键入、输入法上屏每个汉字、剪贴板粘贴，<u>以及程序调 <code>SetText</code></u>。可在处理函数里调 <code>GetText()</code> 拿最新值。<br>这一点<u>与基类 <code>DuiRichEdit</code> 不同</u>：基类只在用户编辑时发，程序设值不发。本控件刻意保持旧输入框的行为，因为存量业务代码里有多处依赖"程序设值也通知"（例如搜索框点清除按钮之后要靠这条通知去重新过滤列表）。确实需要"设值但不通知"时用 <code>SetTextNoNotify</code>。</td><td>0</td></tr>
+    <tr><td><code>DUIN_SETFOCUS</code></td><td>拿到键盘焦点</td><td>0</td></tr>
+    <tr><td><code>DUIN_KILLFOCUS</code></td><td>失去键盘焦点，适合做"提交 / 校验"</td><td>0</td></tr>
+    <tr><td><code>DUIN_EDIT_ENTER</code> <small>(= <code>DUIN_CUSTOM + 83</code>)</small></td><td>单行模式下用户按了回车。多行模式不发（那里回车是换行）。宿主窗口收到后一般执行"确定"按钮的动作</td><td>0</td></tr>
+    <tr><td><code>DUIN_EDIT_ESCAPE</code> <small>(= <code>DUIN_CUSTOM + 84</code>)</small></td><td>用户按了 Esc（单行多行都发）。宿主窗口收到后一般执行"取消"动作，例如收起弹出层、退出内联编辑</td><td>0</td></tr>
   </table>
+
+  <p class="note"><b>派发时必须连 <code>ctrlId</code> 一起判。</b>库里的自定义通知码是<u>按控件各自编号</u>的，每个控件都从 <code>DUIN_CUSTOM</code> 起算，不同控件的第一个自定义码数值必然相同。<code>DuiEdit</code> 特意把自己的取值段开在 <code>DUIN_CUSTOM + 80</code> 起，避开了已经有十余个控件挤着的 <code>+1</code> 那一档，但这只是缓解 —— 宿主窗口的分支条件里仍然要同时比较 <code>code</code> 与 <code>ctrlId</code>，否则别的控件的同值通知会被先写的分支截住，症状是"点了没反应"，不报错也不崩溃。</p>
   <p class="note">表单常见模式：在 <code>DUIN_VALUECHANGED</code> 里实时校验并禁用提交按钮；在 <code>DUIN_KILLFOCUS</code> 里把临时输入持久化到模型。</p>
 <pre><code>// 父对话框 OnDuiNotify：
 auto* n = (balloonwjui::DuiNotify*)lp;
@@ -2334,16 +2365,16 @@ if (n-&gt;ctrlId == IDC_NICKNAME) {
     }
 }
 </code></pre>
-  <p class="note"><b>EnsureCreated 约定</b>：DuiEditHost 内嵌真 EDIT HWND，必须在 host HWND 就绪后调 <code>edit-&gt;EnsureCreated(host-&gt;m_hWnd)</code> 一次才会真正建出来。XML 路径下 builder<u>不会</u>替你调；caller 自己用 <code>FindControlById</code> 找到节点调一次。详见 <a href="#xml-ensure-created">§3.4 EnsureCreated 约定</a>。</p>
+  <p class="note"><b>不需要 EnsureCreated</b> —— 本控件没有子窗口，代码路径和 XML 路径下都是构造完即可用。这条约定在 2026-08-17 之前存在，现已作废，详见 <a href="#xml-ensure-created">§3.4</a>。</p>
   <h4>XML 速查</h4>
   <table>
     <tr><th>标签</th><td><code>&lt;edit id="..." placeholder="..." password="false" multiline="false"/&gt;</code></td></tr>
     <tr><th>详细属性参考</th><td><a href="#xml-edit">§3.3.12 edit</a></td></tr>
-    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> / <code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code></td></tr>
+    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> / <code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code> / <code>DUIN_EDIT_ENTER</code> / <code>DUIN_EDIT_ESCAPE</code> / <code>DUIN_EDIT_LEFT_ICON_CLICK</code> / <code>DUIN_EDIT_RIGHT_ICON_CLICK</code></td></tr>
   </table>
 
-  <h4 id="DuiEditHost-IconApi">内联图标 + 底色 + 边框（默认全部关闭，零回归）</h4>
-  <p>EDIT 框的左 / 右 gutter 可以塞图标，常见用途：搜索框左侧放大镜、邮箱框左侧 <code>@</code>、密码框右侧 👁。EDIT 文字区<u>自动避让 gutter</u>（Layout 把 EDIT HWND 内缩对应宽度），不会盖到图标。配合 <code>SetBgColor</code> 让 EDIT 底色融进容器圆角灰底，配合 <code>SetShowBorder(false)</code> 去掉默认 1px 边框，实现"图标浮在 pill 灰底里、看不到 EDIT 边界"的效果。</p>
+  <h4 id="DuiEdit-IconApi">内联图标 + 底色 + 边框（默认全部关闭）</h4>
+  <p>输入框的左 / 右两侧各可以让出一条固定宽度的区域用来画图标，常见用途：搜索框左侧放大镜、邮箱框左侧 <code>@</code>、密码框右侧的显隐切换按钮。文字区<u>自动避让这条区域</u>（控件把图标宽度加进推给排版引擎的内边距里），不会盖到图标。配合 <code>SetBgColor</code> 让输入框底色融进容器的圆角灰底，配合 <code>SetShowBorder(false)</code> 去掉默认的 1px 边框，就能做出"图标浮在圆角灰底里、看不到输入框边界"的效果。</p>
 
   <p><b>样式示意</b>（左：默认 / 中：左侧放大镜 + 灰底无边框 / 右：右侧 × 清除）：</p>
   <figure class="ctl-fig">
@@ -2364,45 +2395,53 @@ if (n-&gt;ctrlId == IDC_NICKNAME) {
       <line x1="618" y1="15" x2="628" y2="25" stroke="#8C8C8C" stroke-width="1.5" stroke-linecap="round"/>
       <line x1="628" y1="15" x2="618" y2="25" stroke="#8C8C8C" stroke-width="1.5" stroke-linecap="round"/>
     </svg>
-    <figcaption>EDIT 内联图标三种典型用法。中 / 右两图都是同一个 DuiEditHost 实例，分别用 <code>SetIcon(LeftIcon, ...)</code> 和 <code>SetIcon(RightIcon, ...)</code> 配置。</figcaption>
+    <figcaption>内联图标的三种典型用法。中 / 右两图都是同一个 <code>DuiEdit</code> 实例，分别用 <code>SetIcon(LeftIcon, ...)</code> 和 <code>SetIcon(RightIcon, ...)</code> 配置。</figcaption>
   </figure>
 
   <h5>API</h5>
   <table>
     <tr><td><code>SetIcon(slot, gutterW, painter)</code></td>
-        <td>核心 API。<code>slot</code> = <code>LeftIcon</code> / <code>RightIcon</code>；<code>gutterW</code> 是图标占的 px 宽（0 = 移除）；<code>painter</code> 是 <code>std::function&lt;void(HDC, const RECT&amp;)&gt;</code>，caller 在里面用任意 GDI / GDI+ API 把图标画到指定 RECT 内。</td></tr>
+        <td>核心接口。<code>slot</code> = <code>LeftIcon</code> / <code>RightIcon</code>；<code>gutterW</code> 是该侧让出的像素宽（0 = 移除）；<code>painter</code> 是 <code>std::function&lt;void(HDC, const RECT&amp;)&gt;</code>，caller 在里面用任意 GDI / GDI+ 接口把图标画到指定 RECT 内。回调若改动了 HDC 的状态，必须自己恢复。</td></tr>
     <tr><td><code>SetIconBitmap(slot, gutterW, hbm)</code></td>
-        <td>简便重载：用 HBITMAP 当图标。caller 持有 HBITMAP 所有权。内部 painter 在 RECT 内居中 BitBlt（不缩放）。</td></tr>
+        <td>简便重载：用 HBITMAP 当图标。caller 持有 HBITMAP 所有权，本控件不复制也不销毁。内部在 RECT 内居中 BitBlt（不缩放、不做透明处理）。</td></tr>
     <tr><td><code>SetIconGlyph(slot, gutterW, glyph, color)</code></td>
-        <td>简便重载：用 Unicode 字符当图标，用默认字体（Microsoft YaHei 9pt）居中 DrawText。常用 <code>_T("🔍")</code> / <code>_T("@")</code>。</td></tr>
+        <td>简便重载：用一小段文字（一般是一个符号字符）当图标，居中绘制。</td></tr>
     <tr><td><code>ClearIcon(slot)</code></td>
-        <td>等价于 <code>SetIcon(slot, 0, nullptr)</code> —— gutter 收回，文字区扩回。</td></tr>
+        <td>清除该侧图标，让出的宽度归还给文本区。</td></tr>
+    <tr><td><code>GetIconWidth(slot)</code></td>
+        <td>该侧图标当前占用的像素宽度，没有图标时返回 0。</td></tr>
     <tr><td><code>SetIconClickable(slot, b)</code></td>
-        <td>默认 <code>false</code>（图标是装饰，鼠标穿透到 EDIT 设 caret）。<code>true</code> 时 gutter 内点击被本控件消费，发 <code>DUIEN_LEFT_ICON_CLICK</code> / <code>DUIEN_RIGHT_ICON_CLICK</code> 通知给父 host。</td></tr>
+        <td>默认 <code>false</code>（图标是装饰，点击穿透到文本区去定位光标）。<code>true</code> 时该侧点击被本控件消费，鼠标指针变为手形，并发 <code>DUIN_EDIT_LEFT_ICON_CLICK</code> / <code>DUIN_EDIT_RIGHT_ICON_CLICK</code> 通知给宿主窗口。</td></tr>
+    <tr><td><code>SetIconDragHandler(slot, handler)</code></td>
+        <td>让该侧图标区接管鼠标：装上回调之后该侧不再发点击通知，按下 / 移动 / 抬起三类消息原样交给回调。典型用途是在图标区里自绘一条可拖动的滚动条。</td></tr>
+    <tr><td><code>ComputeIconRect(rc, slot, gutterW, borderPx, marginVPx)</code></td>
+        <td>静态纯函数：按同一套规则算出图标矩形，便于调用方对齐自己绘制的内容与命中区。不依赖控件状态。</td></tr>
     <tr><td><code>SetBgColor(c)</code></td>
-        <td>同时控制 (1) DUI 侧 OnPaint 在 EDIT 周围 margin 区填的底色；(2) Win32 EDIT 控件本身的 bg（通过 WM_CTLCOLOREDIT propagate 到 <code>HwndHostControl::SetCtlBgColor</code>）。默认 <code>RGB(255,255,255)</code>。</td></tr>
+        <td>整体底色。默认 <code>RGB(255,255,255)</code>。控件禁用时忽略本设置，改用固定的禁用底色。</td></tr>
     <tr><td><code>SetShowBorder(b)</code></td>
-        <td>是否画 1px 边框。默认 <code>true</code>。把 EDIT 嵌进自带圆角的容器（如 pill 形 SearchBox）时关掉，避免 EDIT 的方框边压在容器圆角上。</td></tr>
+        <td>是否画 1px 边框。默认 <code>true</code>。把输入框嵌进自带圆角的容器时关掉，避免方框边压在容器圆角上。</td></tr>
   </table>
 
   <h5>事件</h5>
   <table class="ev-table">
     <tr><th>code</th><th>触发</th><th>extra</th></tr>
-    <tr><td><code>DUIEN_LEFT_ICON_CLICK</code> <small>(= <code>DUIN_CUSTOM + 1</code>)</small></td>
-        <td>左侧 <code>SetIconClickable(LeftIcon, true)</code> 后，gutter 内左键点击</td><td>0</td></tr>
-    <tr><td><code>DUIEN_RIGHT_ICON_CLICK</code> <small>(= <code>DUIN_CUSTOM + 2</code>)</small></td>
+    <tr><td><code>DUIN_EDIT_LEFT_ICON_CLICK</code> <small>(= <code>DUIN_CUSTOM + 81</code>)</small></td>
+        <td>左侧 <code>SetIconClickable(LeftIcon, true)</code> 之后，在该区域内按下左键</td><td>0</td></tr>
+    <tr><td><code>DUIN_EDIT_RIGHT_ICON_CLICK</code> <small>(= <code>DUIN_CUSTOM + 82</code>)</small></td>
         <td>右侧同理</td><td>0</td></tr>
   </table>
 
-  <p class="note"><b>与小眼睛按钮（<code>SetShowEyeToggle</code>）的关系</b>：右侧图标和密码小眼睛按钮共用右 gutter。当 <code>password=true</code> 且 <code>SetShowEyeToggle(true)</code> 时，<code>SetIcon(RightIcon, ...)</code> 在右侧的绘制 / hit-test 被忽略 —— 小眼睛优先。左侧图标不受影响，可与小眼睛共存。</p>
+  <p class="note"><b>旧通知码名保留为别名</b>：<code>DuiEditHost::DUIEN_LEFT_ICON_CLICK</code> / <code>DUIEN_RIGHT_ICON_CLICK</code> 等值转发到上面两个新码。数值本身变了（新控件另开了取值段，避开库内十余个控件挤在 <code>DUIN_CUSTOM + 1</code> 那一档的老问题），但存量代码比较的是符号而不是字面数值，因此不受影响。新代码用新名字。</p>
 
-  <h5>用法：搜索 pill</h5>
-<pre><code>// 不需要继承 DuiEditHost，普通构造即可：
-auto edit = std::make_unique&lt;balloonwjui::DuiEditHost&gt;();
+  <p class="note"><b>与密码显隐按钮（<code>SetShowEyeToggle</code>）的关系</b>：右侧图标和密码显隐按钮共用右侧那条区域。当 <code>password=true</code> 且 <code>SetShowEyeToggle(true)</code> 时，右侧图标整体让位 —— 它的绘制与命中都被忽略，也不会发出右侧图标点击通知。左侧图标不受影响，可以与显隐按钮共存。</p>
+
+  <h5>用法：圆角搜索框</h5>
+<pre><code>// 不需要继承 DuiEdit，普通构造即可：
+auto edit = std::unique_ptr&lt;balloonwjui::DuiEdit&gt;(new balloonwjui::DuiEdit());
 edit-&gt;SetPlaceholder(_T("搜索音乐、视频、播客..."));
-edit-&gt;SetBgColor(RGB(0xF3, 0xF3, 0xF4));   // 与外层 pill 灰底一致
+edit-&gt;SetBgColor(RGB(0xF3, 0xF3, 0xF4));   // 与外层容器的灰底一致
 edit-&gt;SetShowBorder(false);                // 关掉 1px 边框
-edit-&gt;SetIcon(balloonwjui::DuiEditHost::LeftIcon, 32,
+edit-&gt;SetIcon(balloonwjui::DuiEdit::LeftIcon, 32,
     [](HDC hdc, const RECT&amp; rc) {
         int gx = (rc.left + rc.right) / 2;
         int gy = (rc.top + rc.bottom) / 2;
@@ -2413,112 +2452,118 @@ edit-&gt;SetIcon(balloonwjui::DuiEditHost::LeftIcon, 32,
         balloonwjui::DuiAA::DrawLine(hdc, gx + 3, gy + 3, gx + 7, gy + 7,
                                       c, 1.5f);
     });
-// 外层容器自己 paint 圆角 pill 灰底（参见 PaintHelpers::FillRoundedRect）
+// 外层容器自己绘制圆角灰底（参见 PaintHelpers::FillRoundedRect）
 </code></pre>
 
-  <h5>用法：可点击 × 清除</h5>
-<pre><code>edit-&gt;SetIconGlyph(balloonwjui::DuiEditHost::RightIcon, 24,
+  <h5>用法：可点击的清除按钮</h5>
+<pre><code>edit-&gt;SetIconGlyph(balloonwjui::DuiEdit::RightIcon, 24,
                     _T("✕"), RGB(140, 140, 140));
-edit-&gt;SetIconClickable(balloonwjui::DuiEditHost::RightIcon, true);
+edit-&gt;SetIconClickable(balloonwjui::DuiEdit::RightIcon, true);
 
-// 父对话框 OnDuiNotify 路由：
+// 父对话框 OnDuiNotify 路由（code 与 ctrlId 必须同属一个分支条件）：
 auto* n = (balloonwjui::DuiNotify*)lp;
-if (n-&gt;ctrlId == IDC_SEARCH
-    &amp;&amp; n-&gt;code == balloonwjui::DuiEditHost::DUIEN_RIGHT_ICON_CLICK)
+if (n-&gt;code == balloonwjui::DuiEdit::DUIN_EDIT_RIGHT_ICON_CLICK
+    &amp;&amp; n-&gt;ctrlId == IDC_SEARCH)
 {
     edit-&gt;SetText(_T(""));    // 清空
 }
 </code></pre>
 </div>
 
-<div class="control" id="DuiRichEditHost">
-  <h3>DuiRichEditHost <span class="tag hwnd">HWND-hosted</span></h3>
+<div class="control" id="DuiRichEdit">
+  <h3>DuiRichEdit <span class="tag">纯 DUI</span></h3>
   <figure class="ctl-fig">
-    <img src="images/ctl-richedit-styles.png" alt="DuiRichEditHost 边框示意">
-    <figcaption>RichEdit 框体（带边框）。富文本运行时显示效果请参考 RTF 演示页。</figcaption>
+    <img src="images/ctl-richtext-basic.png" alt="DuiRichEdit 基本形态">
+    <figcaption>无窗口富文本控件。上：普通编辑态；另见占位文字与覆盖式滚动条两图。</figcaption>
   </figure>
-  <p>富文本编辑（基于 <code>RICHEDIT_CLASS</code>）。支持：</p>
-  <ul>
-    <li>RTF 序列化：<code>SaveRTF/LoadRTF</code> + 纯文本 <code>SaveText/LoadText</code></li>
-    <li>粘贴过滤：<code>SetPasteAsPlainTextDefault(true)</code> 或 <code>PasteAsPlainText()</code></li>
-    <li>查找：<code>FindText / FindAndSelect</code>（支持向前/向后、大小写敏感、整词、wrap-around）</li>
-    <li>插入图片 OLE 对象（配合 <code>DuiImageOle</code>）</li>
-  </ul>
 
-  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。<u>挂入后还须在 host HWND 就绪时调一次</u> <code>re-&gt;EnsureCreated(host.m_hWnd)</code>。<code>multi-line</code> / <code>word-wrap</code> / <code>password</code> 必须在 EnsureCreated 之前设（baked-in 风格），切换需销毁重建 HWND。</p>
+  <p>直接使用 Windows 自带的富文本排版引擎（text services），因此文本行为、RTF 格式、链接识别规则都与系统富文本控件一致；但本控件<b>没有自己的窗口</b>，文字由引擎画在宿主的绘制目标上，在布局与绘制上与其它纯 DUI 控件没有区别。</p>
+
+  <h4>能力要点</h4>
+  <table>
+    <tr><th>能力</th><th>成立的原因</th></tr>
+    <tr><td>可以被其它控件遮挡，也可以放进滚动容器 / 页签 / 弹出层</td><td>没有子窗口，父容器的裁剪与层次顺序对它照常生效</td></tr>
+    <tr><td>支持圆角、半透明、渐变背景，以及跟随布局的动画</td><td>排版引擎正式支持透明背景，背景由控件自行绘制</td></tr>
+    <tr><td>可以随内容自动变高（聊天输入框那种）</td><td>控件能直接读到引擎的排版结果，据此上报期望高度</td></tr>
+    <tr><td>同一个窗口里可以放很多个实例</td><td>不消耗窗口句柄</td></tr>
+    <tr><td>多行 / 只读 / 自动换行等属性可以在运行期随时切换</td><td>在无窗口方案里这些只是属性位，改完立即生效，不需要销毁重建</td></tr>
+  </table>
+
+  <p><b>典型父：</b>任意 layout 容器。<b>不需要 EnsureCreated</b> —— 排版引擎不依赖任何窗口，构造函数里就建好了，构造完就能设文本、量尺寸。</p>
 
   <h4>代码创建</h4>
-<pre><code>auto re = std::make_unique&lt;balloonwjui::DuiRichEditHost&gt;();
-re-&gt;SetMultiLine(true);
-re-&gt;SetPasteAsPlainTextDefault(true);   // Ctrl+V 自动只粘文本
-re-&gt;LoadText(_T("默认内容..."));
-balloonwjui::DuiRichEditHost* reRaw = re.get();
-vbox-&gt;AddChild(std::move(re), balloonwjui::DuiLayout::Hint().Weight(1));
+<pre><code>auto rt = std::unique_ptr&lt;balloonwjui::DuiRichEdit&gt;(new balloonwjui::DuiRichEdit());
+rt-&gt;SetMultiLine(true);
+rt-&gt;SetWordWrap(true);
+rt-&gt;SetPlaceholder(_T("输入消息..."));
+balloonwjui::DuiRichEdit* raw = rt.get();
+vbox-&gt;AddChild(std::move(rt), balloonwjui::DuiLayout::Hint().Weight(1));
+raw-&gt;SetText(_T("hello"));   // 不需要任何"创建"调用
+</code></pre>
 
-// host.Create(...) 之后调一次：
-reRaw-&gt;EnsureCreated(host.m_hWnd);
+  <h4>自动增高（聊天输入框那种）</h4>
+  <p>要点是<b>两边都要配</b>：控件侧打开自动增高并设上下限，父容器侧的布局提示必须用<b>自动档</b>。只配一边不生效 —— 布局提示写成固定高度的话，控件报的期望高度不会被采纳。</p>
+<pre><code>auto rt = std::unique_ptr&lt;balloonwjui::DuiRichEdit&gt;(new balloonwjui::DuiRichEdit());
+rt-&gt;SetMultiLine(true);
+rt-&gt;SetWordWrap(true);
+rt-&gt;SetAutoGrowLines(1, 5);          // 最少一行、最多五行，超出改出滚动条
+// 关键：布局提示用自动档，不是 Fixed
+inputRow-&gt;AddChild(std::move(rt), balloonwjui::DuiLayout::Hint().Auto());
+</code></pre>
 
-// 查找
-CHARRANGE r;
-if (reRaw-&gt;FindAndSelect(_T("foo"), 0, /*forward*/true,
-                          /*caseSensitive*/false, /*wholeWord*/false,
-                          /*wrap*/true)) { /* 选中了 */ }
+  <h4>右键菜单</h4>
+  <p>默认就有一整套：读写模式下是撤销 / 重做 /（分隔条）/ 剪切 / 复制 / 粘贴 / 粘贴为纯文本 / 删除 /（分隔条）/ 全选，只读模式下只剩复制与全选，各项按当前状态自动灰显。鼠标右键和键盘的菜单键（<code>Shift+F10</code>）都能唤出。定制分三层，按需要的深度选最省事的那层：</p>
+<pre><code>// 第一层 —— 只想在默认菜单后面加几项。不必写任何类。
+// 编号必须 &gt;= kRichEditMenuCustomBase（1000），低于它会与内置命令撞号，控件会拒绝登记。
+rt-&gt;AppendContextMenuItem(kCmdInsertEmoji, _T("插入表情(&amp;E)"));
+// 用户选中后，控件发 DUIN_RICHTEXT_MENUCOMMAND 给父窗口，extra 就是这个编号。
 
-// 持久化
-CStringA rtf;
-reRaw-&gt;SaveRTF(rtf);    // 含格式
-CString plain;
-reRaw-&gt;SaveText(plain); // 纯文本
+// 第二层 —— 想改默认项（删项 / 改文案 / 临时禁用）。子类化 + 覆写：
+void MyEdit::OnBuildContextMenu(std::vector&lt;balloonwjui::DuiRichEditMenuItem&gt;&amp; items)
+{
+    DuiRichEdit::OnBuildContextMenu(items);   // 先拿到默认菜单
+    // ... 在 items 上任意增删改；分隔条不必操心，控件弹出前会统一规整 ...
+}
+
+// 第三层 —— 完全接管：同一个虚函数，不调基类实现，自己从空数组填起。
+// 或者 rt-&gt;SetContextMenuEnabled(false) 彻底关掉，自己在 OnRButtonDown 里弹别的。
 </code></pre>
 
   <h4>XML 创建</h4>
 <pre><code>&lt;vbox padding="8"&gt;
-    &lt;richedit id="300" multi-line="true" word-wrap="true" auto-url-detect="true" weight="1"/&gt;
+    &lt;richtext id="300" multi-line="true" word-wrap="true"
+              placeholder="输入消息..." auto-grow-lines="1,5" weight="1"/&gt;
 &lt;/vbox&gt;
 </code></pre>
-<pre><code>// caller 侧：
-auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
-host.SetRoot(std::move(root));
-// host HWND 就绪后调一次 EnsureCreated：
-if (auto* re = static_cast&lt;balloonwjui::DuiRichEditHost*&gt;(host.GetRoot()-&gt;FindControlById(300)))
-    re-&gt;EnsureCreated(host.m_hWnd);
-</code></pre>
+
   <h4>事件</h4>
   <table class="ev-table">
     <tr><th>code</th><th>触发</th><th>extra (LPARAM)</th></tr>
-    <tr><td><code>DUIN_VALUECHANGED</code></td><td>RichEdit 内容变化（每次 <code>EN_CHANGE</code>）</td><td>0</td></tr>
+    <tr><td><code>DUIN_VALUECHANGED</code></td><td>内容变化</td><td>0</td></tr>
     <tr><td><code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code></td><td>焦点进出</td><td>0</td></tr>
-    <tr><td><code>DUIN_RE_LINKCLICK</code></td><td>用户点击自动检测到的 URL（需先 <code>SetAutoUrlDetect(true)</code>）。<code>EN_LINK</code> 自动转发为本通知</td><td>原始 <code>EN_LINK</code> 的 <code>lParam</code>（指向 <code>ENLINK</code>，可解析出位置 / 文本）</td></tr>
+    <tr><td><code>DUIN_RICHTEXT_MENUCOMMAND</code></td><td>用户选了右键菜单里的自定义项（内置命令由控件自己执行，不走这条）</td><td>该项的命令编号</td></tr>
   </table>
-<pre><code>// 父对话框：
-auto* n = (balloonwjui::DuiNotify*)lp;
-if (n-&gt;ctrlId == IDC_RE &amp;&amp; n-&gt;code == DUIN_RE_LINKCLICK) {
-    auto* el = (ENLINK*)n-&gt;extra;
-    CString url = re-&gt;GetTextRange(el-&gt;chrg);
-    ::ShellExecute(NULL, _T("open"), url, NULL, NULL, SW_SHOWNORMAL);
-}
-</code></pre>
-  <p class="note"><b>EnsureCreated</b>：同 DuiEditHost，须在 host HWND 就绪后调 <code>re-&gt;EnsureCreated(hostHwnd)</code>。<code>multi-line</code> / <code>word-wrap</code> 必须在 EnsureCreated 之前设（baked-in 风格），切换需销毁重建 HWND。</p>
+
   <h4>XML 速查</h4>
   <table>
-    <tr><th>标签</th><td><code>&lt;richedit id="..." placeholder="..." multi-line="true" word-wrap="true" auto-url-detect="true"/&gt;</code></td></tr>
-    <tr><th>详细属性参考</th><td><a href="#xml-richedit">§3.3.13 richedit</a></td></tr>
-    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> / <code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code> / <code>DUIN_RE_LINKCLICK</code></td></tr>
-    <tr><th>说明</th><td>RTF 序列化 / 图片插入 / 引用块 / 查找等高级功能仅 C++ 暴露，XML 不涉及</td></tr>
+    <tr><th>标签</th><td><code>&lt;richtext id="..." placeholder="..." multi-line="true" word-wrap="true" auto-grow-lines="1,5"/&gt;</code></td></tr>
+    <tr><th>详细属性参考</th><td><a href="#xml-richtext">§3.3.13 richtext</a></td></tr>
+    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> / <code>DUIN_SETFOCUS</code> / <code>DUIN_KILLFOCUS</code> / <code>DUIN_RICHTEXT_MENUCOMMAND</code></td></tr>
+    <tr><th>工作原理</th><td>见 <code>docs/windowless-richedit.md</code> —— 讲清楚了引擎与宿主之间的控制反转、坐标系与单位、以及一批实测出来的坑</td></tr>
   </table>
 </div>
 
 <div class="control" id="DuiSearchBox">
-  <h3>DuiSearchBox <span class="tag hwnd">HWND-hosted</span></h3>
+  <h3>DuiSearchBox <span class="tag dui">纯 DUI</span></h3>
   <figure class="ctl-fig">
     <img src="images/ctl-searchbox-states.png" alt="DuiSearchBox 状态">
     <figcaption>左：空状态显示占位符；右：键入后右端出现 × 清除按钮。</figcaption>
   </figure>
   <p>带搜索图标 + 占位符的紧凑搜索框。键入后发 <code>DUIN_VALUECHANGED</code>。</p>
 
-  <p class="note"><b>实现：M7+ 重构为 <code>DuiEditHost</code> 的 thin preset</b> —— DuiSearchBox 现在<u>继承</u> DuiEditHost，ctor 通过 DuiEditHost 的<a href="#DuiEditHost-IconApi">内联图标 API</a>装好左侧 magnifier；监听 EN_CHANGE 在文字非空时显右侧 ×、空时藏；拦 OnIconClicked_(RightIcon) 自吞 click + SetText("")。重构前是聚合 + 自绘 ~250 行，重构后 ~80 行。<u>对 caller 的 API 表面零变化</u>，<code>SetGlyphStripWidth</code> / <code>SetClearStripWidth</code> / <code>IsClearShowing</code> / <code>GetClearRect</code> / <code>GetEdit</code> 全保留语义（GetEdit 现在返回 <code>this</code>，因为本类<u>就是</u> EDIT）。</p>
+  <p class="note"><b>实现：输入框的一层预设</b> —— DuiSearchBox <u>继承</u>普通输入框（<a href="#DuiEdit">DuiEdit</a>，经兼容外壳 <code>DuiEditHost</code>），构造函数里用<a href="#DuiEdit-IconApi">内联图标接口</a>装好左侧放大镜；文字变化时在非空则显示、空则隐藏右侧清除按钮；拦截右侧图标点击就地清空文本，不让这条点击冒泡到业务代码。改成继承方式之前是聚合 + 自绘约 250 行，之后约 80 行。<u>对调用方的接口表面零变化</u>：<code>SetGlyphStripWidth</code> / <code>SetClearStripWidth</code> / <code>IsClearShowing</code> / <code>GetClearRect</code> / <code>GetEdit</code> 语义全部保留（<code>GetEdit</code> 返回 <code>this</code>，因为本类<u>就是</u>输入框）。</p>
 
-  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。<u>挂入后还须在 host HWND 就绪时调一次</u> <code>sb-&gt;EnsureCreated(host.m_hWnd)</code>（继承自 DuiEditHost）。常见用法是放在联系人 / 文件列表的顶部。</p>
+  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。挂进去就能用，没有额外的创建步骤。常见用法是放在联系人 / 文件列表的顶部。</p>
 
   <h4>代码创建</h4>
 <pre><code>auto sb = std::make_unique&lt;balloonwjui::DuiSearchBox&gt;();
@@ -2528,8 +2573,7 @@ sb-&gt;SetDebounceMs(200);    // 输入防抖（200ms 内多次 keystroke 合并
 balloonwjui::DuiSearchBox* sbRaw = sb.get();
 vbox-&gt;AddChild(std::move(sb), balloonwjui::DuiLayout::Hint().Fixed(28));
 
-// host.Create(...) 之后调一次：
-sbRaw-&gt;EnsureCreated(host.m_hWnd);
+sbRaw-&gt;SetText(_T(""));   // 挂上去就能用，没有额外的创建步骤
 </code></pre>
   <h4>XML 创建</h4>
 <pre><code>&lt;vbox padding="6"&gt;
@@ -2539,13 +2583,13 @@ sbRaw-&gt;EnsureCreated(host.m_hWnd);
 <pre><code>// caller 侧：
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-if (auto* sb = static_cast&lt;balloonwjui::DuiSearchBox*&gt;(host.GetRoot()-&gt;FindControlById(400)))
-    sb-&gt;EnsureCreated(host.m_hWnd);
+auto* sb = static_cast&lt;balloonwjui::DuiSearchBox*&gt;(host.GetRoot()-&gt;FindControlById(400));
+// sb 直接可用
 </code></pre>
   <h4>事件</h4>
   <table class="ev-table">
     <tr><th>code</th><th>触发</th><th>extra (LPARAM)</th></tr>
-    <tr><td><code>DUIN_VALUECHANGED</code></td><td>EDIT 内容变化（已经过 <code>SetDebounceMs</code> 防抖合并）。点击右侧 × 清除按钮也会触发一次（值变为空串）</td><td>0（用 <code>GetText()</code> 拿最新值）</td></tr>
+    <tr><td><code>DUIN_VALUECHANGED</code></td><td>文字变化（已经过 <code>SetDebounceMs</code> 防抖合并）。点击右侧清除按钮也会触发一次（值变为空串）</td><td>0（用 <code>GetText()</code> 拿最新值）</td></tr>
   </table>
 <pre><code>// 父对话框 OnDuiNotify：增量过滤联系人列表
 auto* n = (balloonwjui::DuiNotify*)lp;
@@ -2554,24 +2598,24 @@ if (n-&gt;ctrlId == IDC_SEARCH_CONTACTS &amp;&amp; n-&gt;code == DUIN_VALUECHANG
     m_friendList-&gt;ApplyFilter(q);   // 业务方法：按文本过滤列表项
 }
 </code></pre>
-  <p class="note"><b>EnsureCreated</b>：内嵌一个 DuiEditHost，须在 host HWND 就绪后调 <code>sb-&gt;EnsureCreated(hostHwnd)</code>。</p>
+  <p class="note"><b>不需要 EnsureCreated</b> —— 本控件就是一个无窗口输入框，构造完即可用。</p>
   <h4>XML 速查</h4>
   <table>
     <tr><th>标签</th><td><code>&lt;searchbox id="..." placeholder="..." max-length="64"/&gt;</code></td></tr>
     <tr><th>详细属性参考</th><td><a href="#xml-searchbox">§3.3.14 searchbox</a></td></tr>
-    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> — 文字变化（含 × 清空）；ctrlId 是 searchbox 的 id（已自动从内部 EDIT 重打）</td></tr>
+    <tr><th>事件</th><td><code>DUIN_VALUECHANGED</code> — 文字变化（含点击清除按钮）；ctrlId 就是 searchbox 自己的 id</td></tr>
   </table>
 </div>
 
 <div class="control" id="DuiSpinBox">
-  <h3>DuiSpinBox <span class="tag hwnd">HWND-hosted</span></h3>
+  <h3>DuiSpinBox <span class="tag dui">纯 DUI</span></h3>
   <figure class="ctl-fig">
     <img src="images/ctl-spinbox-default.png" alt="DuiSpinBox 默认形态">
-    <figcaption>左侧 EDIT + 右侧 ↑↓ 增减按钮。</figcaption>
+    <figcaption>左侧输入框 + 右侧 ↑↓ 增减按钮。</figcaption>
   </figure>
   <p>数字输入框 + 上下增减小按钮。</p>
 
-  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。<u>挂入后还须在 host HWND 就绪时调一次</u> <code>spin-&gt;EnsureCreated(host.m_hWnd)</code>（内嵌一个 DuiEditHost）。</p>
+  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。内部聚合一个无窗口输入框（<a href="#DuiEdit">DuiEdit</a>），挂进去就能用，没有额外的创建步骤。</p>
 
   <h4>代码创建</h4>
 <pre><code>auto spin = std::make_unique&lt;balloonwjui::DuiSpinBox&gt;();
@@ -2579,11 +2623,8 @@ spin-&gt;SetCtrlId(IDC_FONT_SIZE);
 spin-&gt;SetRange(0, 100);
 spin-&gt;SetValue(50);
 spin-&gt;SetStep(5);
-balloonwjui::DuiSpinBox* spinRaw = spin.get();
 vbox-&gt;AddChild(std::move(spin), balloonwjui::DuiLayout::Hint().Fixed(28));
-
-// host.Create(...) 之后调一次：
-spinRaw-&gt;EnsureCreated(host.m_hWnd);
+// 挂上去就能用，没有额外的创建步骤
 </code></pre>
   <h4>XML 创建</h4>
 <pre><code>&lt;vbox padding="8"&gt;
@@ -2593,13 +2634,13 @@ spinRaw-&gt;EnsureCreated(host.m_hWnd);
 <pre><code>// caller 侧：
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-if (auto* sp = static_cast&lt;balloonwjui::DuiSpinBox*&gt;(host.GetRoot()-&gt;FindControlById(500)))
-    sp-&gt;EnsureCreated(host.m_hWnd);
+auto* sp = static_cast&lt;balloonwjui::DuiSpinBox*&gt;(host.GetRoot()-&gt;FindControlById(500));
+// sp 直接可用
 </code></pre>
   <h4>事件</h4>
   <table class="ev-table">
     <tr><th>code</th><th>触发</th><th>extra (LPARAM)</th></tr>
-    <tr><td><code>DUIN_VALUECHANGED</code></td><td>用户点 ↑↓ / 在 EDIT 里键入合法数字 / 滚轮滚动；<code>SetValue(_, true)</code> 也触发一次（程序写入），<code>SetValue(_, false)</code> 不触发</td><td>新数值（<code>(int)n-&gt;extra</code>）</td></tr>
+    <tr><td><code>DUIN_VALUECHANGED</code></td><td>用户点 ↑↓ / 在输入框里键入合法数字 / 滚轮滚动；<code>SetValue(_, true)</code> 也触发一次（程序写入），<code>SetValue(_, false)</code> 不触发</td><td>新数值（<code>(int)n-&gt;extra</code>）</td></tr>
   </table>
 <pre><code>// 父对话框 OnDuiNotify：调整字号
 auto* n = (balloonwjui::DuiNotify*)lp;
@@ -2608,7 +2649,7 @@ if (n-&gt;ctrlId == IDC_FONT_SIZE &amp;&amp; n-&gt;code == DUIN_VALUECHANGED) {
     m_chatList-&gt;SetFontSize(newSize);
 }
 </code></pre>
-  <p class="note"><b>EnsureCreated</b>：内嵌一个 DuiEditHost，须在 host HWND 就绪后调 <code>sp-&gt;EnsureCreated(hostHwnd)</code>。<u>用户在 EDIT 里手输入</u>不会自动同步到 m_value —— caller 需在 EDIT 的 <code>DUIN_KILLFOCUS</code> 里调 <code>SetValue(_ttoi(GetEdit()-&gt;GetText()))</code> 提交。</p>
+  <p class="note"><b>不需要 EnsureCreated</b> —— 内嵌的是无窗口输入框，构造完即可用。但要注意：<u>用户在输入框里手动键入的内容</u>不会自动同步到内部数值，caller 需要在输入框的 <code>DUIN_KILLFOCUS</code> 里调 <code>SetValue(_ttoi(GetEdit()-&gt;GetText()))</code> 提交。</p>
   <h4>XML 速查</h4>
   <table>
     <tr><th>标签</th><td><code>&lt;spinbox id="..." min="0" max="999" value="100" step="5"/&gt;</code></td></tr>
@@ -2713,8 +2754,10 @@ if (n-&gt;ctrlId == IDC_MUTE_NOTIF &amp;&amp; n-&gt;code == DUIN_VALUECHANGED) {
     <tr><td><code>SetOnColor / SetOffColor / SetKnobColor</code></td><td>颜色覆盖（默认 某信绿 RGB(7,193,96) / 浅灰 RGB(229,229,229) / 白）</td></tr>
   </table>
   <h4>动画驱动</h4>
-  <p>DuiSwitch 通过 <code>balloonwjui::DuiAnimMgr</code> + <code>DuiDoubleAnim</code> 驱动滑块动画。host 必须周期性调 <code>DuiAnimMgr::Inst().TickAll(::GetTickCount())</code> 才能看到中间帧 —— 典型做法是顶层 frame 在 <code>OnCreate</code> 里 <code>SetTimer(id, 16)</code>、<code>OnTimer</code> 里调 <code>TickAll</code>，<code>OnDestroy</code> 里 <code>KillTimer</code> + <code>DuiAnimMgr::Inst().Clear()</code>。<code>DuiGallery</code> 的 <code>GalleryFrame</code> 已经接通这个 pulse 作为参考实现。</p>
-  <p>没接通 pulse 的业务对话框：<code>SetChecked</code> 仍然能立即把状态设到端点（<code>animated=false</code> 路径），只是没有动画过渡。</p>
+  <p>DuiSwitch 通过 <code>balloonwjui::DuiAnimMgr</code> + <code>DuiDoubleAnim</code> 驱动滑块动画。<code>DuiAnimMgr</code> 自带一个 16ms（约 60Hz）的共享脉冲定时器 <code>::SetTimer(NULL, 0, 16, PulseProc)</code>，在活跃动画列表由空变非空时装上、列表清空时立刻卸掉，空闲期不会有定时器长期挂着。所以宿主窗口<u>不需要也不应该</u>再写「<code>OnCreate</code> 里 <code>SetTimer(id, 16)</code> + <code>OnTimer</code> 里调 <code>TickAll</code> + <code>OnDestroy</code> 里 <code>KillTimer</code>」那一套；<code>DuiGallery</code> 的 <code>GalleryFrame</code> 与 XChat 的两个 frame 都已经把这份宿主定时器删掉了。</p>
+  <p>宿主唯一仍需参与的是销毁时机：窗口析构前调一次 <code>DuiAnimMgr::Inst().Clear()</code>，把可能还持有本窗口控件指针的动画取消掉（<code>Clear()</code> 同时会卸掉共享脉冲定时器）。</p>
+  <p><code>TickAll(nowMs)</code> 保持 public，用途是<b>单元测试里手动驱动</b>：不需要 HWND、也不需要消息循环，直接传入递增的时间戳就能逐帧推进动画并断言中间值（见 <code>balloonui/Tests/DuiAnimationTests.cpp</code>、<code>DuiSwitchTests.cpp</code>）。进度按绝对时间计算，同一帧重复调用不会产生副作用。</p>
+  <p>不想要过渡效果时：<code>SetAnimated(false)</code>，或走 <code>SetChecked</code> 的 <code>animated=false</code> 路径，状态会立即跳到端点。</p>
   <h4>XML 创建</h4>
 <pre><code>&lt;hbox padding="8" gap="8" fixedHeight="32"&gt;
     &lt;label  text="消息免打扰" weight="1"/&gt;
@@ -2741,7 +2784,7 @@ host.SetRoot(std::move(root));
   </figure>
   <p>下拉选择框。两种风格：只读（点击弹下拉列表）/ 可输入（同时键入过滤 — 需 <code>SetIncrementalSearch(true)</code>）。</p>
 
-  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。可输入风格内含 EDIT 子，挂入后须在 host HWND 就绪时调一次 <code>cb-&gt;EnsureCreated(host.m_hWnd)</code>（仅可输入模式必须，只读模式可省）。</p>
+  <p><b>典型父：</b>任意 layout 容器（VBox / HBox / Grid / GroupBox 内容区 / Splitter pane / Dock 子区）。可输入风格内含一个无窗口输入框（<a href="#DuiEdit">DuiEdit</a>），挂进去就能用，没有额外的创建步骤。</p>
 
   <p><b>下拉箭头：</b>右侧三角形走 <code>DuiAA::FillPolygon</code> 抗锯齿绘制（对角斜边在屏上不会出现阶梯像素）。颜色可通过 <code>SetArrowColor(COLORREF)</code> 配置，默认 <code>RGB(80,100,140)</code> 蓝灰色；仅覆盖 enabled 态，disabled 态沿用内部 <code>kArrowDisabled = RGB(160,160,160)</code> 不变（业务一般不需要单独换 disabled 色）。</p>
 
@@ -2755,11 +2798,8 @@ cb-&gt;SetEditable(true);
 cb-&gt;SetIncrementalSearch(true);
 cb-&gt;SetIncrementalSearchSubstring(true);   // 子串匹配（默认 false 仅前缀）
 cb-&gt;SetIncrementalSearchCaseSensitive(false);
-balloonwjui::DuiComboBox* cbRaw = cb.get();
 hbox-&gt;AddChild(std::move(cb), balloonwjui::DuiLayout::Hint().Fixed(160));
-
-// 可输入模式：host.Create(...) 之后调一次：
-cbRaw-&gt;EnsureCreated(host.m_hWnd);
+// 挂上去就能用，可输入模式也不需要额外的创建步骤
 </code></pre>
   <table>
     <tr><td><code>AddItem / RemoveAt / Clear</code></td><td>项目操作</td></tr>
@@ -3793,12 +3833,12 @@ hbox-&gt;AddChild(std::move(gif), balloonwjui::DuiLayout::Hint().Fixed(48));
 
 <div class="control" id="DuiImageOle">
   <h3>DuiImageOle <span class="tag dui">DUI</span></h3>
-  <p>RichEdit 内嵌图片对象。把它插入到 <code>DuiRichEditHost</code> 后，图片随文字一起被序列化 / 滚动。常用于聊天窗"插入表情"。</p>
+  <p>RichEdit 内嵌图片对象。把它插入到富文本控件后，图片随文字一起被序列化 / 滚动。常用于聊天窗"插入表情"。</p>
 
-  <p><b>典型父：</b><u>不</u>是 layout 子控件 —— 它是 RichEdit OLE 对象，由业务调 <code>richEdit-&gt;InsertImage(...)</code> 内联插入到 <code>DuiRichEditHost</code> 文本流中，跟普通字符并排参与滚动 / 选区 / 复制粘贴。</p>
+  <p><b>典型父：</b><u>不</u>是 layout 子控件 —— 它是 RichEdit OLE 对象，由业务调 <code>richEdit-&gt;InsertImage(...)</code> 内联插入到富文本控件的文本流中，跟普通字符并排参与滚动 / 选区 / 复制粘贴。</p>
 
   <h4>代码用法</h4>
-<pre><code>// richEdit 已经挂入 layout 并 EnsureCreated 之后：
+<pre><code>// richEdit 已经挂入 layout 之后：
 HBITMAP hBmp = LoadEmojiBitmap(_T("smiley.png"));
 richEdit-&gt;InsertImage(hBmp);     // 内联插入到当前光标位置
 </code></pre>
@@ -4021,7 +4061,7 @@ vbox-&gt;AddChild(std::move(sv), balloonwjui::DuiLayout::Hint().Weight(1));
     <tr><td><code>SetAlpha(float)</code> / <code>GetAlpha()</code></td><td>直接设 / 查询 alpha，跳过动画。0 完全透明（OnPaint 不画），1 完全不透明。一般不用，让 fade 函数管理。</td></tr>
   </table>
 
-  <p class="note"><b>挂 60Hz pulse</b>：auto-hide 的 fade 走 <code>DuiAnimMgr</code>，需要 host 所在 frame 在 WM_TIMER 里调 <code>DuiAnimMgr::Inst().TickAll(GetTickCount())</code>。XChat 的 <code>XChatMainFrame</code> 已挂 16ms timer 当 60Hz pulse，业务沿用即可。如果 caller 自己的 frame 没挂 pulse，scrollbar 会一直停在初始 alpha 不动（既不渐入也不渐出）。</p>
+  <p class="note"><b>不必挂 pulse</b>：auto-hide 的 fade 走 <code>DuiAnimMgr</code>，而 <code>DuiAnimMgr</code> 自带 16ms 共享脉冲定时器 —— 有活跃动画时自行装上、播完自行卸掉。caller 所在的 frame <u>不需要</u>写 <code>SetTimer</code>，也不该再调 <code>TickAll</code>；只要该线程在正常泵消息，渐入渐出就会自己跑起来。<code>TickAll</code> 仍是 public 的，但只用于单元测试手动驱动。</p>
 
 <pre><code>// 自定义 list 控件启用 auto-hide：
 ctor() {
@@ -4157,7 +4197,7 @@ enum {
   <tr><td>需要批量渲染（如聊天列表 1000 条消息）</td><td><b>自绘</b>（避免 HWND 句柄爆掉）</td></tr>
   <tr><td>动画密度高 / 帧率敏感</td><td><b>自绘</b>（直接控制 OnPaint）</td></tr>
   <tr><td>只是普通按钮、列表、tab、复选框</td><td><b>用现成</b>（DuiButton / DuiListBox / DuiTab …）</td></tr>
-  <tr><td>需要 IME 输入</td><td><b>用 DuiEditHost / DuiRichEditHost</b>（HWND-hosted，自绘搞不定 IME）</td></tr>
+  <tr><td>需要 IME 输入</td><td><b>用 DuiEdit / DuiRichEdit</b>（自绘控件处理不了输入法；这两个控件本身是无窗口的，输入法由系统文本服务提供）</td></tr>
 </table>
 
 <h3 id="custom-steps">8.2 写一个自绘 DuiControl 的最小步骤</h3>
@@ -5029,7 +5069,7 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 
 <p>本章给 5 个常见 UI 布局的完整 demo — <b>每个都是 balloonui 真控件渲染</b>（不是 mock），并附等价 XML 描述。截图来自 DuiGallery 的 <code>Layouts</code> tab，运行 <code>DuiGallery.exe --capture-all flamingoclient\docs\images</code> 可重新生成。</p>
 
-<p class="note">本章的目标是<b>"看完就会拼一个真窗口"</b> — 重点演示 <code>DuiVBox/HBox/Dock/Splitter</code> 的 Hint 用法（<code>Fixed</code>/<code>Weight</code>）+ 现成控件（<code>DuiLabel</code>/<code>DuiEditHost</code>/<code>DuiButton</code>/<code>DuiListBox</code>/<code>DuiSearchBox</code>/<code>DuiAvatar</code>/<code>DuiComboBox</code>）的组合方式。</p>
+<p class="note">本章的目标是<b>"看完就会拼一个真窗口"</b> — 重点演示 <code>DuiVBox/HBox/Dock/Splitter</code> 的 Hint 用法（<code>Fixed</code>/<code>Weight</code>）+ 现成控件（<code>DuiLabel</code>/<code>DuiEdit</code>/<code>DuiButton</code>/<code>DuiListBox</code>/<code>DuiSearchBox</code>/<code>DuiAvatar</code>/<code>DuiComboBox</code>）的组合方式。</p>
 
 <h3 id="layout-skeleton-app">9.0 通用程序结构（5 个示例共用脚手架）</h3>
 
@@ -5058,7 +5098,7 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 #include "Controls/DuiLayout.h"
 #include "Controls/DuiLabel.h"
 #include "Controls/DuiButton.h"
-#include "Controls/DuiEditHost.h"
+#include "Controls/DuiEdit.h"
 // ...按本示例需要 include 其它控件头...
 
 using namespace balloonwjui;
@@ -5097,7 +5137,7 @@ public:
 };
 
 // === 3) WinMain：进程入口。一次性做 DPI 感知、OLE 启动、frame 创建、
-//     客户区装载、HWND-hosted 控件 EnsureCreated、显示、消息循环。
+//     客户区装载、显示、消息循环。
 int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
 {
     // a) Per-Monitor V2 DPI 感知 —— 必须在任何 HWND 创建之前。
@@ -5131,18 +5171,13 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
     auto root = BuildLoginRoot();
     frame.SetClientContent(std::move(root));
 
-    // f) <b>EnsureCreated</b> —— 如果客户区有 DuiEditHost / DuiRichEditHost /
-    //    DuiSearchBox / DuiSpinBox，必须在 host HWND 就绪后调一次创建
-    //    它们的内部 EDIT 子 HWND。详见 §3.4。
-    //    简单遍历法：拿 root，按 id / 类型找出来一个个调。
+    // f) 客户区里的输入框（DuiEdit / DuiSearchBox / DuiSpinBox / DuiComboBox）
+    //    <b>不需要任何额外的创建步骤</b> —— 它们都是无窗口控件，装进树里就能用。
+    //    2026-08-17 之前这里要逐个调 EnsureCreated，现已作废，详见 §3.4。
     auto* clientRoot = frame.GetClientContent();
-    if (auto* edit = (DuiEditHost*)clientRoot-&gt;FindControlById(100 /*用户名*/))
+    if (auto* edit = (DuiEdit*)clientRoot-&gt;FindControlById(100 /*用户名*/))
     {
-        edit-&gt;EnsureCreated(frame.m_hWnd);
-    }
-    if (auto* edit = (DuiEditHost*)clientRoot-&gt;FindControlById(101 /*密码*/))
-    {
-        edit-&gt;EnsureCreated(frame.m_hWnd);
+        edit-&gt;SetFocus();                  // 例：让焦点落在用户名输入框上
     }
 
     // g) 显示窗口 + 消息循环。
@@ -5216,11 +5251,11 @@ sub-&gt;SetTextAlign(DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 card-&gt;AddChild(std::move(sub), DuiLayout::Hint().Fixed(20));
 
 // 用户名 / 密码
-auto eUser = std::make_unique&lt;DuiEditHost&gt;();
+auto eUser = std::make_unique&lt;DuiEdit&gt;();
 eUser-&gt;SetPlaceholder(_T("用户名 / 邮箱"));
 card-&gt;AddChild(std::move(eUser), DuiLayout::Hint().Fixed(32));
 
-auto ePwd = std::make_unique&lt;DuiEditHost&gt;();
+auto ePwd = std::make_unique&lt;DuiEdit&gt;();
 ePwd-&gt;SetPlaceholder(_T("密码"));
 ePwd-&gt;SetPassword(true);
 card-&gt;AddChild(std::move(ePwd), DuiLayout::Hint().Fixed(32));
@@ -5307,12 +5342,12 @@ std::unique_ptr&lt;DuiControl&gt; BuildLoginRoot()
     sub-&gt;SetTextAlign(DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     card-&gt;AddChild(std::move(sub), DuiLayout::Hint().Fixed(20));
 
-    auto eUser = std::make_unique&lt;DuiEditHost&gt;();
+    auto eUser = std::make_unique&lt;DuiEdit&gt;();
     eUser-&gt;SetCtrlId(IDC_USER);
     eUser-&gt;SetPlaceholder(_T("用户名 / 邮箱"));
     card-&gt;AddChild(std::move(eUser), DuiLayout::Hint().Fixed(32));
 
-    auto ePwd = std::make_unique&lt;DuiEditHost&gt;();
+    auto ePwd = std::make_unique&lt;DuiEdit&gt;();
     ePwd-&gt;SetCtrlId(IDC_PWD);
     ePwd-&gt;SetPlaceholder(_T("密码"));
     ePwd-&gt;SetPassword(true);
@@ -5361,8 +5396,8 @@ std::unique_ptr&lt;DuiControl&gt; BuildLoginRoot()
         if (n-&gt;code == DUIN_CLICK)
         {
             // 拿用户名 / 密码 EDIT 当前值
-            auto* user = (DuiEditHost*)GetClientContent()-&gt;FindControlById(IDC_USER);
-            auto* pwd  = (DuiEditHost*)GetClientContent()-&gt;FindControlById(IDC_PWD);
+            auto* user = (DuiEdit*)GetClientContent()-&gt;FindControlById(IDC_USER);
+            auto* pwd  = (DuiEdit*)GetClientContent()-&gt;FindControlById(IDC_PWD);
             DoLogin(user-&gt;GetText(), pwd-&gt;GetText());
         }
         return 0;
@@ -5388,7 +5423,7 @@ std::unique_ptr&lt;DuiControl&gt; BuildLoginRoot()
 
 <h4>9.1.3 构建 + 运行</h4>
 
-<p>WinMain 直接用 <a href="#layout-skeleton-app">§9.0.2</a> 的脚手架，<code>extern</code> 声明里换成 <code>BuildLoginRoot()</code>；EnsureCreated 段已经覆盖 IDC_USER / IDC_PWD 两个 EDIT。<code>frame.SetTitle(_T("登录"))</code> + <code>ResizeClient(800, 600)</code> 让卡片真正居中显示。生成 / 运行同 §9.0.3。</p>
+<p>WinMain 直接用 <a href="#layout-skeleton-app">§9.0.2</a> 的脚手架，<code>extern</code> 声明里换成 <code>BuildLoginRoot()</code>；两个输入框（IDC_USER / IDC_PWD）装进树里就能用，不需要额外的创建步骤。<code>frame.SetTitle(_T("登录"))</code> + <code>ResizeClient(800, 600)</code> 让卡片真正居中显示。生成 / 运行同 §9.0.3。</p>
 
 <!-- ============================================================== -->
 <h3 id="layout-form">9.2 表单</h3>
@@ -5409,7 +5444,7 @@ auto makeRow = [](LPCTSTR labelText, LPCTSTR placeholder) {
     auto l = std::make_unique&lt;DuiLabel&gt;();
     l-&gt;SetText(labelText);
     l-&gt;SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-    auto e = std::make_unique&lt;DuiEditHost&gt;();
+    auto e = std::make_unique&lt;DuiEdit&gt;();
     if (placeholder) e-&gt;SetPlaceholder(placeholder);
     row-&gt;AddChild(std::move(l), DuiLayout::Hint().Fixed(80));   // 标签固定宽
     row-&gt;AddChild(std::move(e), DuiLayout::Hint().Weight(1));   // 编辑框弹性
@@ -5499,7 +5534,7 @@ std::unique_ptr&lt;DuiControl&gt; BuildFormRoot()
         auto l = std::make_unique&lt;DuiLabel&gt;();
         l-&gt;SetText(labelText);
         l-&gt;SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        auto e = std::make_unique&lt;DuiEditHost&gt;();
+        auto e = std::make_unique&lt;DuiEdit&gt;();
         e-&gt;SetCtrlId(editId);
         if (placeholder) e-&gt;SetPlaceholder(placeholder);
         row-&gt;AddChild(std::move(l), DuiLayout::Hint().Fixed(80));
@@ -5546,10 +5581,10 @@ case IDC_SAVE:
     if (n-&gt;code == DUIN_CLICK)
     {
         auto* root = GetClientContent();
-        m_model.name  = ((DuiEditHost*)root-&gt;FindControlById(IDC_NAME ))-&gt;GetText();
-        m_model.nick  = ((DuiEditHost*)root-&gt;FindControlById(IDC_NICK ))-&gt;GetText();
-        m_model.email = ((DuiEditHost*)root-&gt;FindControlById(IDC_EMAIL))-&gt;GetText();
-        m_model.phone = ((DuiEditHost*)root-&gt;FindControlById(IDC_PHONE))-&gt;GetText();
+        m_model.name  = ((DuiEdit*)root-&gt;FindControlById(IDC_NAME ))-&gt;GetText();
+        m_model.nick  = ((DuiEdit*)root-&gt;FindControlById(IDC_NICK ))-&gt;GetText();
+        m_model.email = ((DuiEdit*)root-&gt;FindControlById(IDC_EMAIL))-&gt;GetText();
+        m_model.phone = ((DuiEdit*)root-&gt;FindControlById(IDC_PHONE))-&gt;GetText();
         SaveProfile(m_model);
         ::PostMessage(m_hWnd, WM_CLOSE, 0, 0);
     }
@@ -5562,7 +5597,7 @@ case IDC_CANCEL:
 case IDC_EMAIL:
     if (n-&gt;code == DUIN_VALUECHANGED)
     {
-        auto* edit = (DuiEditHost*)GetClientContent()-&gt;FindControlById(IDC_EMAIL);
+        auto* edit = (DuiEdit*)GetClientContent()-&gt;FindControlById(IDC_EMAIL);
         bool valid = ValidateEmail(edit-&gt;GetText());
         ((DuiButton*)GetClientContent()-&gt;FindControlById(IDC_SAVE))-&gt;SetEnabled(valid);
     }
@@ -5571,7 +5606,7 @@ case IDC_EMAIL:
 
 <h4>9.2.3 构建 + 运行</h4>
 
-<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a> 脚手架；<code>extern</code> 改 <code>BuildFormRoot()</code>，EnsureCreated 段把 4 个 EDIT id（IDC_NAME / NICK / EMAIL / PHONE）都 Create 一次。<code>SetTitle(_T("个人资料"))</code>。生成命令同 §9.0.3。</p>
+<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a> 脚手架；<code>extern</code> 改 <code>BuildFormRoot()</code>；4 个输入框（IDC_NAME / NICK / EMAIL / PHONE）不需要额外的创建步骤。<code>SetTitle(_T("个人资料"))</code>。生成命令同 §9.0.3。</p>
 
 <!-- ============================================================== -->
 <h3 id="layout-three-pane">9.3 三列主窗</h3>
@@ -5747,7 +5782,7 @@ default:
 
 <h4>9.3.3 构建 + 运行</h4>
 
-<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildThreePaneRoot()</code>。EnsureCreated 段补一行 <code>FindControlById(IDC_SEARCH)-&gt;EnsureCreated(frame.m_hWnd)</code>（SearchBox 内嵌一个 EDIT）。<code>SetTitle(_T("Flamingo IM"))</code> + <code>ResizeClient(1100, 720)</code> 给三栏足够空间。</p>
+<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildThreePaneRoot()</code>。搜索框（IDC_SEARCH）同样不需要额外的创建步骤。<code>SetTitle(_T("Flamingo IM"))</code> + <code>ResizeClient(1100, 720)</code> 给三栏足够空间。</p>
 
 <!-- ============================================================== -->
 <h3 id="layout-settings">9.4 设置页</h3>
@@ -5954,7 +5989,7 @@ case IDC_CLOSE_BEHAVIOR:
 
 <h4>9.4.3 构建 + 运行</h4>
 
-<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildSettingsRoot()</code>。无 EDIT，所以 EnsureCreated 段可以全删。<code>SetTitle(_T("设置"))</code>。生成命令同 §9.0.3。</p>
+<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildSettingsRoot()</code>。<code>SetTitle(_T("设置"))</code>。生成命令同 §9.0.3。</p>
 
 <!-- ============================================================== -->
 <h3 id="layout-skeleton">9.5 窗口骨架（Dock）</h3>
@@ -6083,7 +6118,7 @@ default:
 
 <h4>9.5.3 构建 + 运行</h4>
 
-<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildSkeletonRoot()</code>。无 EDIT，所以 EnsureCreated 段可以全删。<code>SetTitle(_T("文档浏览器"))</code> + <code>ResizeClient(1024, 720)</code>。</p>
+<p>WinMain 用 <a href="#layout-skeleton-app">§9.0.2</a>；<code>extern</code> 改 <code>BuildSkeletonRoot()</code>。<code>SetTitle(_T("文档浏览器"))</code> + <code>ResizeClient(1024, 720)</code>。</p>
 
 <hr>
 
@@ -6244,7 +6279,7 @@ frame.ShowWindow(SW_SHOW);
   <tr><td>4 角变小或重叠</td><td>insets 之和大于源尺寸（<code>L+R &gt; srcW</code> 或 <code>T+B &gt; srcH</code>）。<code>DuiNinePatch::ClampInsets</code> 会按比例缩小，但视觉上仍可能不是你想要的 — 改源图或调小 insets。</td></tr>
   <tr><td>背景画不出来 / 黑屏</td><td>HBITMAP 是 32bpp 但 alpha=0。<code>StretchBlt(SRCCOPY)</code> 复制 alpha 后被宿主 BitBlt 当透明处理 → 黑。两条解决路：①加载时强制 alpha=255；②走 <code>Gdiplus::Bitmap::GetHBITMAP(背景色, &amp;hbm)</code> 把 alpha 预合成进 RGB（demo 走的就是这条）。</td></tr>
   <tr><td>HBITMAP 何时释放</td><td>caller 拥有，比 host 活久。host 析构不会动它。建议生命期内只 <code>SetBgImage(nullptr, {})</code> 解关联，进程退出由 OS 回收。</td></tr>
-  <tr><td>插入子控件后看不到背景</td><td>子控件覆盖了背景。子控件通常不画自身背景（透明），但有些（DuiListBox / DuiEditHost）用纯色 brush 填底 — 给它们 <code>SetBgColor(transparent_marker)</code> 或在它们之间留 padding。</td></tr>
+  <tr><td>插入子控件后看不到背景</td><td>子控件覆盖了背景。子控件通常不画自身背景（透明），但有些（DuiListBox / DuiEdit）用纯色画刷填底 — 给它们 <code>SetBgColor(transparent_marker)</code> 或在它们之间留 padding。</td></tr>
 </table>
 
 <h3 id="bg-titlebar">10.8 把渐变区当作窗口标题栏（透明标题条）</h3>
@@ -6515,7 +6550,7 @@ frame.ShowWindow(nCmdShow);
 
 <h2 id="feature-strip">12. 按需裁剪 (Feature Strip)</h2>
 
-<p>balloonui 提供 28 个控件 + 一个 XML builder。但实际项目里业务多半只用其中一部分（聊天客户端可能不需要 <code>DuiTreeView</code>，工具类应用不需要 <code>DuiRichEditHost</code>，等等）。本节介绍如何用<u>预处理器宏</u>把没用到的控件从编译过程中剔除，从而让最终 <code>balloonui.dll</code> / <code>.lib</code> 体积变小。</p>
+<p>balloonui 提供 31 个控件 + 一个 XML builder（<code>DuiEditHost</code> 是 <code>DuiEdit</code> 的兼容名，同一个控件，不重复计数）。但实际项目里业务多半只用其中一部分（聊天客户端可能不需要 <code>DuiTreeView</code>，工具类应用不需要 <code>DuiEmojiPanel</code>，等等）。本节介绍如何用<u>预处理器宏</u>把没用到的控件从编译过程中剔除，从而让最终 <code>balloonui.dll</code> / <code>.lib</code> 体积变小。</p>
 
 <h3>12.1 工作原理</h3>
 
@@ -6525,7 +6560,7 @@ frame.ShowWindow(nCmdShow);
 
 <h3>12.2 开关一览表</h3>
 
-<p>共 28 个独立开关 + 1 个衍生开关（GALLERY）。每个 <code>BUI_DISABLE_XXX</code> 关掉对应控件；下表把控件按目录分组列出。</p>
+<p>共 32 个独立开关 + 1 个衍生开关（GALLERY）。每个 <code>BUI_DISABLE_XXX</code> 关掉对应控件；下表把控件按目录分组列出。</p>
 
 <table>
   <tr><th>开关</th><th>控件</th><th>关闭后影响</th><th>依赖（被传染）</th></tr>
@@ -6538,9 +6573,9 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>BUI_DISABLE_BADGE</code></td><td>DuiBadge</td><td><code>&lt;badge&gt;</code> XML 失效</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_SEPARATOR</code></td><td>DuiSeparator</td><td><code>&lt;separator&gt;</code> XML 失效</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_GROUPBOX</code></td><td>DuiGroupBox</td><td><code>&lt;groupbox&gt;</code> XML 失效</td><td>—</td></tr>
-  <tr><td><code>BUI_DISABLE_EDIT</code></td><td>DuiEditHost</td><td><code>&lt;edit&gt;</code> XML 失效</td><td>SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW</td></tr>
-  <tr><td><code>BUI_DISABLE_IMAGEOLE</code></td><td>CDuiImageOle</td><td>RichEdit 内嵌图片不可用</td><td>RICHEDIT</td></tr>
-  <tr><td><code>BUI_DISABLE_RICHEDIT</code></td><td>DuiRichEditHost</td><td><code>&lt;richedit&gt;</code> XML 失效</td><td>—</td></tr>
+  <tr><td><code>BUI_DISABLE_EDIT</code></td><td>DuiEdit（及其兼容外壳 DuiEditHost）</td><td><code>&lt;edit&gt;</code> XML 失效</td><td>SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW</td></tr>
+  <tr><td><code>BUI_DISABLE_IMAGEOLE</code></td><td>CDuiImageOle</td><td>RichEdit 内嵌图片不可用</td><td>—</td></tr>
+  <tr><td><code>BUI_DISABLE_RICHTEXT</code></td><td>DuiRichEdit / DuiTextHost / DuiTextServices</td><td><code>&lt;richtext&gt;</code> XML 失效；库内将没有任何文本编辑能力</td><td>必须<u>一并</u>关掉 EDIT（见下）</td></tr>
   <tr><td><code>BUI_DISABLE_SEARCHBOX</code></td><td>DuiSearchBox</td><td><code>&lt;searchbox&gt;</code> XML 失效</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_SPINBOX</code></td><td>DuiSpinBox</td><td><code>&lt;spinbox&gt;</code> XML 失效</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_SLIDER</code></td><td>DuiSlider</td><td><code>&lt;slider&gt;</code> XML 失效</td><td>—</td></tr>
@@ -6555,6 +6590,12 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>BUI_DISABLE_MENUBAR</code></td><td>DuiMenuBar</td><td><code>&lt;menu-bar&gt;</code> XML 失效；常驻菜单条不可用</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_PROGRESSBAR</code></td><td>DuiProgressBar</td><td><code>&lt;progress&gt;</code> XML 失效</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_TOOLTIP</code></td><td>DuiToolTipMgr</td><td>悬浮提示气泡不可用</td><td>—</td></tr>
+<tr>
+<td><code>BUI_DISABLE_TOAST</code></td>
+<td>DuiToast</td>
+<td>顶部浮出的轻量提示条不可用</td>
+<td>—</td>
+</tr>
   <tr><td><code>BUI_DISABLE_POPUPHOST</code></td><td>DuiPopupHost</td><td>—</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_EMOJIPANEL</code></td><td>DuiEmojiPanel</td><td>—</td><td>—</td></tr>
   <tr><td><code>BUI_DISABLE_GIF</code></td><td>DuiGif</td><td>动图退化为静态首帧</td><td>—</td></tr>
@@ -6562,15 +6603,25 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>BUI_DISABLE_XMLBUILDER</code></td><td>DuiXmlBuilder</td><td><code>FromString</code> / <code>FromFrameXml</code> 失效（需手写 C++ AddChild 链）</td><td>—</td></tr>
 </table>
 
-<p>"被传染"列表示：关掉本行 feature 自动连带关掉这些上层 feature。例如 <code>BUI_DISABLE_EDIT</code> 会让 SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW 一起消失（因为它们内部嵌入 <code>DuiEditHost</code>）。文件中用 <code>#if !defined(BUI_DISABLE_X) &amp;&amp; defined(BUI_FEATURE_DEP)</code> 链强制执行。</p>
+<p>"被传染"列表示：关掉本行 feature 自动连带关掉这些上层 feature。例如 <code>BUI_DISABLE_EDIT</code> 会让 SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW 一起消失（因为它们内部都嵌了一个输入框）。文件中用 <code>#if !defined(BUI_DISABLE_X) &amp;&amp; defined(BUI_FEATURE_DEP)</code> 链强制执行。</p>
+
+<p class="note"><b>EDIT 依赖 RICHTEXT（2026-08-17 新增）。</b>输入框改为无窗口实现之后，<code>DuiEdit</code> 建在富文本控件 <code>DuiRichEdit</code> 之上 —— 排版、光标、选区、输入法、剪贴板都由后者提供。因此 <code>BUI_DISABLE_RICHTEXT</code> 与 EDIT <b>不能同时成立</b>。这一条和别的依赖不同，<u>不是自动连带关闭</u>，而是在 <code>BalloonUiFeatures.h</code> 的依赖一致性检查段里用 <code>#error</code> 拦下来：</p>
+
+<pre><code>#if defined(BUI_DISABLE_RICHTEXT) &amp;&amp; defined(BUI_FEATURE_EDIT)
+#  error "BUI_FEATURE_EDIT requires BUI_FEATURE_RICHTEXT (DuiEdit derives from DuiRichEdit). Remove BUI_DISABLE_RICHTEXT or also disable EDIT."
+#endif</code></pre>
+
+<p>换句话说，要关掉 RICHTEXT，就得把 <code>BUI_DISABLE_EDIT</code> 一起加上；那样 SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW 会按上面的传染规则一并消失，剩下的是一套<u>没有任何文本输入能力</u>的控件集。</p>
 
 <h3>12.3 衍生开关 BUI_FEATURE_GALLERY</h3>
 
-<p><code>DuiGalleryDlg</code> + <code>DuiGalleryAutoStart</code> 是 dev-only 测试入口（Debug 启动时自动弹一个浏览所有控件 demo 的窗口）。它<u>使用了几乎所有控件</u>，所以 BalloonUiFeatures.h 自动派生一个 <code>BUI_FEATURE_GALLERY</code> 开关：仅当 28 个底层 feature 全开时才为 1。任何一个底层 feature 关掉 → gallery 整个跳过编译。这避免了 GalleryDlg.cpp 内对失踪 RunAll() 等符号的引用。</p>
+<p><code>DuiGalleryDlg</code> + <code>DuiGalleryAutoStart</code> 是 dev-only 测试入口（Debug 启动时自动弹一个浏览所有控件 demo 的窗口）。它<u>使用了几乎所有控件</u>，所以 BalloonUiFeatures.h 自动派生一个 <code>BUI_FEATURE_GALLERY</code> 开关：仅当它用到的那 30 个底层 feature 全开时才为 1（<code>TOAST</code> 与 <code>LAYOUT</code> 不在其内）。任何一个底层 feature 关掉 → gallery 整个跳过编译。这避免了 GalleryDlg.cpp 内对失踪 RunAll() 等符号的引用。</p>
 
 <h3>12.4 实测体积差</h3>
 
 <p>测试方法：保持默认编译 balloonui.dll（feature 全开）记下尺寸；在 <code>balloonui.vcxproj</code> 的预处理器定义里加 23 个 <code>BUI_DISABLE_*</code>（保留 LAYOUT + LABEL + BUTTON + EDIT + XMLBUILDER），重新编译记下尺寸。VS 2022 + Win32。</p>
+
+<p class="note">这组数字测于 2026-08-17 输入框无窗口化<u>之前</u>。当时的"极简"配置里 EDIT 还不依赖 RICHTEXT，现在同一组开关必须再保留 RICHTEXT 才能编过，因此极简一侧的实际体积会比表中偏大。表里的百分比只反映数量级，需要准确数字请自行重测。</p>
 
 <table>
   <tr><th>配置</th><th>balloonui.dll 尺寸</th><th>剩余</th></tr>
@@ -6586,7 +6637,7 @@ frame.ShowWindow(nCmdShow);
 
 <ol>
   <li>在 <code>balloonui/balloonui.vcxproj</code> 的"项目属性 → C/C++ → 预处理器 → 预处理器定义"里加上你要关的 feature，分号分隔。例：
-    <pre>BUI_DISABLE_TREEVIEW;BUI_DISABLE_RICHEDIT;BUI_DISABLE_MENU;BUI_DISABLE_GIF</pre>
+    <pre>BUI_DISABLE_TREEVIEW;BUI_DISABLE_RICHTEXT;BUI_DISABLE_MENU;BUI_DISABLE_GIF</pre>
   </li>
   <li>重新编译 balloonui（Release 用 <code>Bin\balloonui.dll</code> + <code>balloonui.lib</code>；Debug 同）。</li>
   <li><b>关键</b>：在你的业务 exe 工程里加<u>同一份</u>预处理器定义。否则业务 exe 端 <code>#include "Controls/.../DuiXxx.h"</code> 看到的 class 声明跟 DLL 导出符号不一致 → 链接失败。</li>
@@ -6908,7 +6959,7 @@ frame.ShowWindow(nCmdShow);
 
 <h2 id="demo-xchat">14. 综合案例：XChat（某信 PC 复刻）</h2>
 
-<p><code>third_party/XChat/</code> 用 balloonui 复刻某信 Windows PC 客户端界面，是除 DemoTaskManager 之外另一个完整的"参考贴近"案例。重点演示：<u>多视图主面板（聊天 / 联系人 / 公众号 / 空 chat 水印）的切换</u>、<u>session-list 驱动的右栏 view</u>、<u>HWND-hosted EDIT（搜索 / 输入框）</u>、<u>ChatScrollBar auto-hide</u> 以及大量<u>自绘 stroke icon / chat 气泡 / 文件卡 / 程序化"假图片"</u>。和 DemoTaskManager 互补 —— 后者偏 menu/tab/list 这种"工具型 UI"，本 demo 偏"消息流 + 弹层 + 大量自定义视觉元素"的"消费型 UI"。</p>
+<p><code>third_party/XChat/</code> 用 balloonui 复刻某信 Windows PC 客户端界面，是除 DemoTaskManager 之外另一个完整的"参考贴近"案例。重点演示：<u>多视图主面板（聊天 / 联系人 / 公众号 / 空 chat 水印）的切换</u>、<u>session-list 驱动的右栏 view</u>、<u>无窗口输入框（搜索栏 / 聊天输入区）</u>、<u>ChatScrollBar auto-hide</u> 以及大量<u>自绘 stroke icon / chat 气泡 / 文件卡 / 程序化"假图片"</u>。和 DemoTaskManager 互补 —— 后者偏 menu/tab/list 这种"工具型 UI"，本 demo 偏"消息流 + 弹层 + 大量自定义视觉元素"的"消费型 UI"。</p>
 
 <figure>
   <img class="shot" src="images/xchat/main_chat.png" alt="XChat 主面板聊天 view">
@@ -6925,13 +6976,13 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>DuiVBox / DuiHBox / DuiGrid</code></td><td>所有 XML 容器；主面板三栏靠最外层 <code>&lt;hbox&gt;</code></td></tr>
   <tr><td><code>DuiVirtualList</code></td><td>主面板中栏 session-list（21 个会话；rowH 68；自管 scrollbar + auto-hide）</td></tr>
   <tr><td><code>DuiScrollBar</code></td><td>session-list 自带；ChatMessageList 内嵌；ContactCategoryList 内嵌。<b>都启用了 auto-hide</b>（默认隐藏，hover/wheel 渐入）</td></tr>
-  <tr><td><code>DuiEditHost</code></td><td>左侧搜索栏（id=60）+ 右侧聊天输入区（id=400）；后者 multiline。两者通过 <code>EM_SETCUEBANNER</code> 走 placeholder（caller demo exe 必须挂 ComCtl32 v6 manifest）</td></tr>
+  <tr><td><code>DuiEdit</code></td><td>左侧搜索栏（id=60）+ 右侧聊天输入区（id=400）；后者 multiline。两者的占位文字都由控件自己绘制</td></tr>
   <tr><td><code>DuiSwitch</code></td><td>群信息栏"消息免打扰" + 设置页"保留聊天记录""自动下载"。<u>用 <code>alignCross="center"</code> 让 fixedHeight 真生效</u>，让 switch 在 32 高 hbox 里居中显示</td></tr>
   <tr><td><code>DuiAvatar</code></td><td>登录窗 loading view 的 110×110 圆角矩形头像；主面板左 nav 顶部 38×38 用户头像</td></tr>
   <tr><td><code>DuiLabel</code></td><td>chat-title（id=300）；登录窗"扫码登录"/"仅传输文件"等文字（手动 SetTextAlign 居中）；info-field 的 label/value 两行</td></tr>
   <tr><td><code>DuiMenu</code></td><td>左下汉堡 nav-icon 点击弹出 5 项菜单（聊天文件 / 聊天记录管理 / 锁定 / 意见反馈 / 设置）</td></tr>
   <tr><td><code>DuiAA / GDI+</code></td><td>所有非轴对齐路径（圆角矩形头像 / unread badge 胶囊 / mute bell 圆环 / chevron 三角 / chat 圆头像 / DuiSwitch 胶囊 / 8 种"假图片" / 文件 ext-icon / 水印双气泡）走 GDI+ AntiAlias</td></tr>
-  <tr><td><code>DuiAnim</code></td><td>登录 spinner（旋转 240° 弧线）+ DuiSwitch 拨动 + DuiScrollBar fade in/out 都走 DuiAnimMgr。XChatMainFrame 在 WM_TIMER 16ms pulse 里调 <code>TickAll</code></td></tr>
+  <tr><td><code>DuiAnim</code></td><td>登录 spinner（旋转 240° 弧线）+ DuiSwitch 拨动 + DuiScrollBar fade in/out 都走 DuiAnimMgr。DuiAnimMgr 自带 16ms 共享脉冲定时器，LoginFrame 与 XChatMainFrame 都不挂宿主 pulse，只在 <code>OnDestroy</code> 里调 <code>DuiAnimMgr::Inst().Clear()</code></td></tr>
 </table>
 
 <h3 id="xchat-files">14.2 文件清单</h3>
@@ -7082,7 +7133,7 @@ frame.ShowWindow(nCmdShow);
   </figure>
   <figure style="margin:0;">
     <img class="shot" src="images/xchat/main_chat.png" alt="XChat 聊天 view" style="width:100%;">
-    <figcaption><b>聊天 view（pane 200 / <code>main.xml</code>）</b>：右栏 chat 区显示 <code>ChatMessageList</code> 6 种 ChatItemKind（文本气泡 / 假图 / 文件卡 / 二维码图 / 转账卡 / 日期分隔），底部 toolbar + 真 EDIT 输入框 + 发送按钮。</figcaption>
+    <figcaption><b>聊天 view（pane 200 / <code>main.xml</code>）</b>：右栏 chat 区显示 <code>ChatMessageList</code> 6 种 ChatItemKind（文本气泡 / 假图 / 文件卡 / 二维码图 / 转账卡 / 日期分隔），底部 toolbar + 输入框 + 发送按钮。</figcaption>
   </figure>
 </div>
 
@@ -7116,7 +7167,7 @@ frame.ShowWindow(nCmdShow);
       &lt;control weight="1"/&gt;
     &lt;/hbox&gt;
 
-    &lt;!-- 6.4 输入区（真 EDIT） --&gt;
+    &lt;!-- 6.4 输入区 --&gt;
     &lt;edit id="400" multiline="true" fixedHeight="92"/&gt;
 
     &lt;!-- 6.5 底部 send 行 --&gt;
@@ -7179,7 +7230,7 @@ frame.ShowWindow(nCmdShow);
   <tr><td>消息流（气泡 / 卡 / 图片 / 文件）</td><td><b>纯代码自绘</b>：ChatMessageList 自管 layout + 6 种 paint 函数（PaintTextBubble / PaintImage / PaintTransferCard / PaintKnowledgeCard / PaintDateDivider / PaintFile）</td></tr>
   <tr><td>chat 中假图片（火锅/风景/操场/二维码/...）</td><td><b>纯代码自绘</b>：8 种 ImageKind 各对应一段 30-50 行 GDI+ 路径，<u>不依赖 PNG 资源</u></td></tr>
   <tr><td>文件卡 ext-icon（DOCX/PDF/...）</td><td><b>纯代码自绘</b>：FileExtColor(ext) 按后缀返色 → PaintFileExtIcon 画圆角矩形 + header band + 居中白色 ext 大字</td></tr>
-  <tr><td>聊天输入框 / 搜索框</td><td><b>library + caller wire</b>：&lt;edit id="60/400"/&gt;；MainFrame.LoadMainXml 末尾 <code>FindCtrlById</code> + <code>EnsureCreated(m_hWnd)</code> 真创建 EDIT HWND；placeholder 由 BuildEdit 透到 SetPlaceholder → SyncPlaceholderToHwnd → EM_SETCUEBANNER</td></tr>
+  <tr><td>聊天输入框 / 搜索框</td><td><b>library</b>：&lt;edit id="60/400"/&gt;；builder 建出来即可用，caller 侧不需要任何创建步骤；placeholder 由 BuildEdit 直接透到 <code>SetPlaceholder</code></td></tr>
   <tr><td>群信息栏 info-field（label + value 两行）</td><td><b>XML 复合 + factory</b>：&lt;info-field&gt; 在 factory 里组装 DuiVBox + 2 个 DuiLabel</td></tr>
   <tr><td>群信息栏成员 grid</td><td><b>纯代码自绘</b>：GroupMembersGrid 按 sessionIdx 取 Sessions().members，2×4 grid（前 6 + 添加/移除占位）</td></tr>
   <tr><td>群信息栏"消息免打扰"</td><td><b>XML 复合 + library</b>：&lt;info-mute-row&gt; factory 组装 DuiHBox + DuiLabel + DuiSwitch（带 alignCross="center"）</td></tr>
@@ -7221,7 +7272,7 @@ frame.ShowWindow(nCmdShow);
 
 <h2 id="demo-cloudmelody">15. 综合案例：CloudMelodyDesktop（音乐 App demo）</h2>
 
-<p><code>third_party/CloudMelodyDesktop/</code> 用 balloonui 复刻一款音乐 App（"FangMusic"），设计稿来源 <code>third_party/cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/</code> 共 8 张界面。和 DemoTaskManager / XChat 互补 —— 后两者偏"信息密集型 UI"（菜单 / 列表 / 表格），本 demo 偏"卡片 / 媒体内容 + 动效"的<u>消费型 UI</u>，演示：<u>多页面路由切换（ContentRouter）</u>、<u>真实 mock 播放计时</u>、<u>GDI+ 抗锯齿自绘控件（旋转黑胶 / 圆形播放按钮 / 色板渐变封面）</u>、<u>UpdateLayeredWindow 逐像素 alpha 桌面浮窗（桌面歌词）</u>、<u>全屏沉浸模式</u>、<u>DuiEditHost 内联图标 API 应用（搜索 pill）</u>。</p>
+<p><code>third_party/CloudMelodyDesktop/</code> 用 balloonui 复刻一款音乐 App（"FangMusic"），设计稿来源 <code>third_party/cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/</code> 共 8 张界面。和 DemoTaskManager / XChat 互补 —— 后两者偏"信息密集型 UI"（菜单 / 列表 / 表格），本 demo 偏"卡片 / 媒体内容 + 动效"的<u>消费型 UI</u>，演示：<u>多页面路由切换（ContentRouter）</u>、<u>真实 mock 播放计时</u>、<u>GDI+ 抗锯齿自绘控件（旋转黑胶 / 圆形播放按钮 / 色板渐变封面）</u>、<u>UpdateLayeredWindow 逐像素 alpha 桌面浮窗（桌面歌词）</u>、<u>全屏沉浸模式</u>、<u>DuiEdit 内联图标接口的应用（圆角搜索框）</u>。</p>
 
 <p><b>注</b>：以下截图来自<u>设计稿</u>（<code>cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/screen.png</code>）。实际运行效果（<code>third_party/Bin/CloudMelodyDesktop.exe</code>）与设计稿基本一致 —— 同样的色板、同样的布局、同样的字号梯度；细节（卡片 hover / 按钮 active 态等）按设计稿语义实现。</p>
 
@@ -7235,7 +7286,7 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>DuiVBox / DuiHBox</code></td><td>所有页面内部 layout、卡片网格、播放栏 transport 行 / 进度行</td></tr>
   <tr><td><code>DuiLabel</code></td><td>所有静态文字（标题 / 副标 / 链接 / section header / 时长 label）。配合 <code>SetFont</code> 用 <code>CloudMelodyFonts.h</code> 6 档梯度（DisplayLg/HeadlineMd/TitleSm/BodyMd/BodySm/LabelXs）</td></tr>
   <tr><td><code>DuiAvatar</code></td><td>TopBar 用户头像（圆形 fallback "张"）+ ProfilePage 大头像（96px）</td></tr>
-  <tr><td><code>DuiEditHost</code></td><td>TopBar 搜索 pill 内嵌真 EDIT —— <u>用本期新加的内联图标 API</u> 装左侧放大镜（<code>SetIcon(LeftIcon, 32, painter)</code>）+ <code>SetBgColor</code> 让 EDIT 底色与 pill 灰底融合 + <code>SetShowBorder(false)</code> 关 EDIT 默认 1px 边框</td></tr>
+  <tr><td><code>DuiEdit</code></td><td>TopBar 的圆角搜索框 —— 用<u>内联图标接口</u>装左侧放大镜（<code>SetIcon(LeftIcon, 32, painter)</code>）+ <code>SetBgColor</code> 让输入框底色与容器灰底融合 + <code>SetShowBorder(false)</code> 关掉默认的 1px 边框</td></tr>
   <tr><td><code>DuiTab</code></td><td>LocalMusic 的 "全部歌曲 / 歌手 / 专辑 / 正在下载"；Favorites 的 "全部 / 歌单 / 艺人"；NowPlaying 的 "歌词 / 视频"</td></tr>
   <tr><td><code>DuiSeparator</code></td><td>各页 section 分隔线、单曲列表表头下方</td></tr>
   <tr><td><code>DuiSlider</code></td><td>PlayerBar 音量条（关掉 <code>SetTabStop(false)</code>，让点击边缘不画虚线焦点框）</td></tr>
@@ -7253,7 +7304,7 @@ frame.ShowWindow(nCmdShow);
   <tr><td><code>App/CloudMelodyTheme.h</code></td><td>设计令牌集中：所有色（kColor*）、尺寸（kSize*）、圆角（kRadius*）、字体名 kFontFaceCJK = Microsoft YaHei</td></tr>
   <tr><td><code>App/CloudMelodyFonts.{h,cpp}</code></td><td>6 档进程级 HFONT 单例缓存：DisplayLg(30/700) / HeadlineMd(22/600) / TitleSm(16/600) / BodyMd(14/400) / BodySm(13/400) / LabelXs(11/500)。<code>Fonts::Get(kind)</code> 懒构造 + cache。<code>MakeLabel(text, color, kind)</code> 便捷 helper</td></tr>
   <tr><td><code>App/Sidebar.{h,cpp}</code></td><td>左 220px 导航栏。private 类 <code>SidebarNavItem : DuiControl</code> 自绘 active 4px 红条 + tint 底；自绘 8 种 nav 图标（NavIconKind 枚举：Discover/Podcast/Music/Favorites/Recent/Profile/Settings/Help，全 GDI+ 1.5px stroke）。<code>BuildSidebar(initialNav)</code> 工厂返根</td></tr>
-  <tr><td><code>App/TopBar.{h,cpp}</code></td><td>顶 48px 工具条。<code>SearchPill : DuiVBox</code> 自绘圆角 pill 灰底 + 1px 描边，内嵌一个 <code>DuiEditHost</code> 用<a href="#DuiEditHost-IconApi">新内联图标 API</a> 装左 magnifier。<code>BuildTopBar()</code> 工厂</td></tr>
+  <tr><td><code>App/TopBar.{h,cpp}</code></td><td>顶 48px 工具条。<code>SearchPill : DuiVBox</code> 自绘圆角 pill 灰底 + 1px 描边，内嵌一个 <code>DuiEdit</code>，用<a href="#DuiEdit-IconApi">内联图标接口</a>装左侧放大镜。<code>BuildTopBar()</code> 工厂</td></tr>
   <tr><td><code>App/PlayerBar.{h,cpp}</code></td><td>底 80px 播放栏。<code>PlayerBar : DuiHBox</code> 自身就是控件类，缓存 6 个子指针（cover / title / sub / 时长 left/right / progress / playBtn / shuffleBtn）。public 方法：<code>Tick(deltaMs) / OnPlayClicked / OnPrevClicked / OnNextClicked / OnSeek / OnShuffleClicked</code>。状态：m_trackIdx / m_durationSec / m_posMs / m_playing / m_playMode（4 模式循环）</td></tr>
   <tr><td><code>App/ContentRouter.{h,cpp}</code></td><td>中部页面路由器 <code>: DuiVBox</code>。<code>Switch(navId, extra)</code>：销毁旧 page → 调对应 <code>Build*Page()</code> 建新 page → AddChild + ForceLayout。NavId 枚举见 Sidebar.h（100..120）</td></tr>
   <tr><td><code>App/DesktopLyricsWnd.{h,cpp}</code></td><td>独立 ATL <code>CWindowImpl</code> 顶层浮窗。<code>WS_POPUP + WS_EX_TOPMOST + WS_EX_LAYERED + WS_EX_NOACTIVATE</code>。<u>UpdateLayeredWindow 逐像素 alpha</u> 模式：背景全透 + 文字白带黑 1px 描边 + 左 60% 绿色"已唱"。从任意区域可拖（HTCAPTION 全捕）</td></tr>
@@ -7495,16 +7546,16 @@ void RotatingDisc::Tick(int deltaMs)
 }
 </code></pre>
 
-<h4>SearchPill（用 DuiEditHost 内联图标 API）</h4>
+<h4>SearchPill（用 DuiEdit 的内联图标接口）</h4>
 <pre><code>class SearchPill : public DuiVBox {
 public:
     SearchPill() {
-        auto edit = std::make_unique&lt;DuiEditHost&gt;();
+        auto edit = std::unique_ptr&lt;DuiEdit&gt;(new DuiEdit());
         edit-&gt;SetPlaceholder(_T("搜索音乐、视频、播客..."));
         edit-&gt;SetBgColor(kPillBg);                  // 与 pill 灰底融合
         edit-&gt;SetShowBorder(false);                  // 关 EDIT 默认 1px 边
         // 左 magnifier：用本期新加的内联图标 API
-        edit-&gt;SetIcon(DuiEditHost::LeftIcon, 32, [](HDC hdc, const RECT&amp; rc) {
+        edit-&gt;SetIcon(DuiEdit::LeftIcon, 32, [](HDC hdc, const RECT&amp; rc) {
             // GDI+ 抗锯齿圆环 + 右下斜把手
             DuiAA::FillEllipse(hdc, ...);
             DuiAA::DrawLine(hdc, ...);
@@ -7647,7 +7698,7 @@ public:
 <p>32bpp BGRA 位图的一种存储约定 —— 每个像素的 RGB 分量已经<u>乘以 alpha</u>（如完全透明的红 = (0,0,0,0) 而不是 (255,0,0,0)）。<code>AlphaBlend</code>、<code>UpdateLayeredWindow</code> 都要求 premultiplied。balloonui 在 <code>DuiNinePatch::Draw</code> 内自动处理；caller 用 GDI+ 加载 PNG 时通过 <code>Gdiplus::Bitmap::GetHBITMAP(白底, &amp;hbm)</code> 把 alpha 预合成进 RGB 也能规避此坑。</p>
 
 <h3 id="g-richedit">RICHEDIT50W</h3>
-<p>Windows 自带的富文本控件类（msftedit.dll）。能渲染图文混排 / RTF / IME 输入，所以 balloonui 在 <code>DuiRichEditHost</code> 直接寄宿一个真 RICHEDIT50W HWND，<u>不</u>尝试用纯 DUI 重写。</p>
+<p>Windows 自带的富文本控件类（msftedit.dll）。能渲染图文混排 / RTF / IME 输入。balloonui 的 <code>DuiRichEdit</code> 直接复用该控件的排版引擎（text services），<u>不</u>尝试用纯 DUI 重写排版逻辑。</p>
 
 <h3 id="g-subclass">SubclassWindow（子类化）</h3>
 <p>WTL 术语 —— 把某个已存在 HWND 的 wndproc 替换成自己的 <code>CWindowImpl</code>，<u>原始 wndproc 仍在</u>，未处理的消息走它。balloonui 用法：<code>DuiHost::SubclassWindow(existingDialogHwnd)</code> 把已有 CDialog 接管成 DUI 容器。</p>

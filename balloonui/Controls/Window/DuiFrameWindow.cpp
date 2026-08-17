@@ -396,11 +396,22 @@ public:
             {
                 HDC mem = ::CreateCompatibleDC(hdc);
                 HGDIOBJ old = ::SelectObject(mem, m_icon);
-                ::SetStretchBltMode(hdc, HALFTONE);
-                ::SetBrushOrgEx(hdc, 0, 0, nullptr);
-                ::StretchBlt(hdc, cx - kIcon / 2, cy - kIcon / 2,
-                             kIcon, kIcon,
-                             mem, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+                if (bm.bmBitsPixel == 32)
+                {
+                    //32 位含 alpha 的图标用 AlphaBlend：透明背景融入标题栏底 / hover 高亮，
+                    //避免 SRCCOPY 把图标矩形的不透明背景盖在 hover 色上露出方块。
+                    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+                    ::AlphaBlend(hdc, cx - kIcon / 2, cy - kIcon / 2, kIcon, kIcon,
+                                 mem, 0, 0, bm.bmWidth, bm.bmHeight, bf);
+                }
+                else
+                {
+                    ::SetStretchBltMode(hdc, HALFTONE);
+                    ::SetBrushOrgEx(hdc, 0, 0, nullptr);
+                    ::StretchBlt(hdc, cx - kIcon / 2, cy - kIcon / 2,
+                                 kIcon, kIcon,
+                                 mem, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+                }
                 ::SelectObject(mem, old);
                 ::DeleteDC(mem);
             }
@@ -919,6 +930,63 @@ void DuiFrameWindow::SetTitleBarHeight(int px)
     }
 }
 
+void DuiFrameWindow::ToggleFullscreen()
+{
+    if (m_fullscreen)
+    {
+        ExitFullscreen();
+        return;
+    }
+    if (!m_hWnd || !m_skeleton || !m_titleBar)
+    {
+        return;
+    }
+
+    // 保存当前窗口位置 / 大小，退出全屏时恢复
+    m_savedPlacement.length = sizeof(WINDOWPLACEMENT);
+    ::GetWindowPlacement(m_hWnd, &m_savedPlacement);
+
+    // 隐藏标题栏：把它在骨架里的高度改成 0 并设不可见，客户区（Weight 1）自动铺满。
+    // 用 SetHint 改高度而非重建骨架，避免丢失 SetClientContent 设进去的客户区控件。
+    m_titleBar->SetVisible(false);
+    m_skeleton->SetHint(m_titleBar, DuiLayout::Hint().Fixed(0));
+
+    // 铺满按钮所在显示器的整个屏幕区域（rcMonitor 含任务栏，区别于最大化的工作区）
+    HMONITOR mon = ::MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi;
+    mi.cbSize = sizeof(mi);
+    if (::GetMonitorInfo(mon, &mi))
+    {
+        ::SetWindowPos(m_hWnd, HWND_TOP,
+                       mi.rcMonitor.left, mi.rcMonitor.top,
+                       mi.rcMonitor.right - mi.rcMonitor.left,
+                       mi.rcMonitor.bottom - mi.rcMonitor.top,
+                       SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    }
+    m_fullscreen = true;
+}
+
+void DuiFrameWindow::ExitFullscreen()
+{
+    if (!m_fullscreen || !m_hWnd)
+    {
+        return;
+    }
+
+    // 恢复标题栏高度与可见性
+    if (m_skeleton && m_titleBar)
+    {
+        m_titleBar->SetVisible(true);
+        m_skeleton->SetHint(m_titleBar, DuiLayout::Hint().Fixed(m_titleH));
+    }
+
+    // 恢复窗口位置 / 大小
+    ::SetWindowPlacement(m_hWnd, &m_savedPlacement);
+    ::SetWindowPos(m_hWnd, nullptr, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    m_fullscreen = false;
+}
+
 void DuiFrameWindow::SetIcon(HBITMAP icon)
 {
     m_titleIcon = icon;
@@ -1113,6 +1181,12 @@ void DuiFrameWindow::SetClientContent(std::unique_ptr<DuiControl> root)
         return;
     }
 
+    // 整个更换客户区的过程都标记为「控件树变更中」：旧客户区子树在下面的
+    // RemoveChild 里就地析构，而它的指针此刻仍留在父控件的 m_children 里，
+    // 期间宿主对控件树做任何遍历都可能读到已释放的节点。
+    // 与 DuiHost::SetRoot、DuiScrollView::SetContent 同一口径。
+    BeginTreeChange();
+
     // Replace the content slot. Skeleton holds: [titleBar, content].
     if (m_clientContent)
     {
@@ -1123,6 +1197,8 @@ void DuiFrameWindow::SetClientContent(std::unique_ptr<DuiControl> root)
     m_skeleton->AddChild(std::move(root), DuiLayout::Hint().Weight(1));
     m_clientContent = raw;
     LayoutSkeleton();
+
+    EndTreeChange();
 }
 
 LRESULT DuiFrameWindow::OnNcCalcSize(UINT, WPARAM wParam, LPARAM lParam, BOOL& bHandled)
@@ -1300,6 +1376,20 @@ LRESULT DuiFrameWindow::OnNcHitTestMsg(UINT, WPARAM, LPARAM lParam, BOOL& bHandl
     }
     int scaledBorder = ::MulDiv(m_borderPx, dpi, 96);
     UINT ht = ComputeNcHitTest(pt, wr, m_titleH, scaledBorder, m_resizable, btnRcs);
+
+    //caption icon（标题栏自定义图标按钮，AddCaptionIcon）落在按钮条最左缘到 min 按钮之间，
+    //ComputeNcHitTest 只认 min/max/close 三个矩形、不认 caption icon，会把它判成 HTCAPTION
+    //（点击被系统当成拖窗口、按钮收不到鼠标）。补一刀：标题栏高度内、横坐标 >= 按钮条左缘
+    //的区域一律算客户区，使 caption icon 可点。
+    if (ht == HTCAPTION && m_titleBar)
+    {
+        int stripLeftScreen = wr.left + m_titleBar->GetButtonStripLeft();
+        if (pt.y >= wr.top && pt.y < wr.top + m_titleH && pt.x >= stripLeftScreen)
+        {
+            ht = HTCLIENT;
+        }
+    }
+
     bHandled = TRUE;
     return (LRESULT)ht;
 }

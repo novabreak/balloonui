@@ -14,8 +14,9 @@
 //   <logo-image src="wechat_logo_gray.png"/>         —— 静态 PNG（同 LoginFrame::QrImage）
 //   <login-avatar/>                                  —— 复用 LoginFrame 的圆角头像
 //
-// 60Hz pulse：本 frame 暂无动画控件（Phase 2 阶段），但保留 timer 注册，
-// Phase 5+ 加 spinner / 切换动画时无需再改这里。
+// 动画驱动：本 frame 不注册任何动画 pulse 定时器。DuiAnimMgr 自带一个
+// 16ms 的共享线程定时器，有活跃动画时自行装上、播完自行卸掉，Phase 5+ 加
+// spinner / 切换动画时同样不需要在这里补 timer。
 // =============================================================================
 
 #include "Controls/Window/DuiFrameWindow.h"
@@ -30,9 +31,7 @@ class XChatMainFrame : public balloonwjui::DuiFrameWindow
 {
 public:
     BEGIN_MSG_MAP(XChatMainFrame)
-        MESSAGE_HANDLER(WM_CREATE,     OnCreate_)
         MESSAGE_HANDLER(WM_DESTROY,    OnDestroy_)
-        MESSAGE_HANDLER(WM_TIMER,      OnTimer_)
         MESSAGE_HANDLER(WM_DUI_NOTIFY, OnDuiNotify_)
         CHAIN_MSG_MAP(balloonwjui::DuiFrameWindow)
     END_MSG_MAP()
@@ -54,9 +53,7 @@ public:
     void ShowEmptyView();
 
 private:
-    LRESULT OnCreate_   (UINT, WPARAM, LPARAM, BOOL& bHandled);
     LRESULT OnDestroy_  (UINT, WPARAM, LPARAM, BOOL& bHandled);
-    LRESULT OnTimer_    (UINT, WPARAM, LPARAM, BOOL& bHandled);
     LRESULT OnDuiNotify_(UINT, WPARAM, LPARAM, BOOL& bHandled);
 
     void    ShowHamburgerMenu_(balloonwjui::DuiControl* navIcon);

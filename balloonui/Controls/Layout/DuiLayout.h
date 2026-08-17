@@ -72,7 +72,12 @@ public:
     //   DuiLayout::Hint().Fixed(80).Margin(4).AlignC(AlignCenter)
     struct Hint
     {
-        int     fixedMain  = -1;    // 主轴像素；-1 = 用 weight
+        // fixedMain 的两个特殊取值：
+        //   -1（默认）  按 weight 分剩余空间
+        //   kAutoMain   按子控件自己报告的期望尺寸占位（见下面的 Auto()）
+        enum { kAutoMain = -2 };
+
+        int     fixedMain  = -1;    // 主轴像素；-1 = 用 weight；kAutoMain = 自动
         int     fixedCross = -1;    // 交叉轴像素；-1 = 撑满交叉轴
         int     weight     = 1;     // 主轴剩余空间的份数
         int     marginL    = 0;
@@ -86,6 +91,18 @@ public:
         Hint& Fixed(int main, int cross = -1) { fixedMain = main; fixedCross = cross; return *this; }
         // 主轴权重 w（剩余空间按所有非固定子的 weight 总和按比例分）。
         Hint& Weight(int w)                   { weight = w; return *this; }
+        // 主轴按**子控件自己报告的期望尺寸**占位（DuiControl::GetDesiredSize）。
+        //
+        // 适用于高度随内容变化的控件 —— 典型是无窗口富文本控件打开自动增高
+        // 之后，输入框会随着打字自己变高。用固定像素做不到（内容一变就不对），
+        // 用权重也做不到（权重分的是剩余空间，与内容多少无关）。
+        //
+        // 与固定档一样**不参与剩余空间的分配**：先按期望尺寸占掉自己那份，
+        // 剩下的才由带权重的兄弟去分。
+        //
+        // 控件没有覆写期望尺寸时会报告 0，此时本档等价于「占 0 像素」——
+        // 所以只给真正会报告尺寸的控件用。
+        Hint& Auto()                          { fixedMain = kAutoMain; return *this; }
         // 4 边 margin。
         Hint& Margin(int l, int t, int r, int b) { marginL = l; marginT = t; marginR = r; marginB = b; return *this; }
         Hint& Margin(int all)                 { marginL = marginT = marginR = marginB = all; return *this; }

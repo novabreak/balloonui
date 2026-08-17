@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Kernel">
@@ -38,6 +38,10 @@
     <ClCompile Include="DuiAnimation.cpp">    <Filter>Kernel</Filter></ClCompile>
     <ClInclude Include="DuiAsyncImage.h">     <Filter>Kernel</Filter></ClInclude>
     <ClCompile Include="DuiAsyncImage.cpp">   <Filter>Kernel</Filter></ClCompile>
+    <ClInclude Include="DuiCaret.h">          <Filter>Kernel</Filter></ClInclude>
+    <ClCompile Include="DuiCaret.cpp">        <Filter>Kernel</Filter></ClCompile>
+    <ClInclude Include="DuiTrace.h">          <Filter>Kernel</Filter></ClInclude>
+    <ClCompile Include="DuiTrace.cpp">        <Filter>Kernel</Filter></ClCompile>
     <ClInclude Include="DuiControl.h">        <Filter>Kernel</Filter></ClInclude>
     <ClCompile Include="DuiControl.cpp">      <Filter>Kernel</Filter></ClCompile>
     <ClInclude Include="DuiDpi.h">            <Filter>Kernel</Filter></ClInclude>
@@ -96,8 +100,15 @@
     <ClInclude Include="Controls\Input\DuiEditHost.h">     <Filter>Controls\Input</Filter></ClInclude>
     <ClCompile Include="Controls\Input\DuiEditHost.cpp">   <Filter>Controls\Input</Filter></ClCompile>
     <ClInclude Include="Controls\Input\EditContextMenu.h"> <Filter>Controls\Input</Filter></ClInclude>
-    <ClInclude Include="Controls\Input\DuiRichEditHost.h"> <Filter>Controls\Input</Filter></ClInclude>
-    <ClCompile Include="Controls\Input\DuiRichEditHost.cpp"><Filter>Controls\Input</Filter></ClCompile>
+    <ClInclude Include="Controls\Input\DuiTextServices.h"> <Filter>Controls\Input</Filter></ClInclude>
+    <ClCompile Include="Controls\Input\DuiTextServices.cpp"><Filter>Controls\Input</Filter></ClCompile>
+    <ClInclude Include="Controls\Input\DuiTextHost.h">     <Filter>Controls\Input</Filter></ClInclude>
+    <ClCompile Include="Controls\Input\DuiTextHost.cpp">   <Filter>Controls\Input</Filter></ClCompile>
+    <ClInclude Include="Controls\Input\DuiEdit.h">         <Filter>Controls\Input</Filter></ClInclude>
+    <ClCompile Include="Controls\Input\DuiEdit.cpp">       <Filter>Controls\Input</Filter></ClCompile>
+    <ClInclude Include="Controls\Input\DuiRichEdit.h">     <Filter>Controls\Input</Filter></ClInclude>
+    <ClInclude Include="Controls\Input\RichEditContextMenu.h"> <Filter>Controls\Input</Filter></ClInclude>
+    <ClCompile Include="Controls\Input\DuiRichEdit.cpp">   <Filter>Controls\Input</Filter></ClCompile>
     <ClInclude Include="Controls\Input\DuiSearchBox.h">    <Filter>Controls\Input</Filter></ClInclude>
     <ClCompile Include="Controls\Input\DuiSearchBox.cpp">  <Filter>Controls\Input</Filter></ClCompile>
     <ClInclude Include="Controls\Input\DuiSpinBox.h">      <Filter>Controls\Input</Filter></ClInclude>

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -169,12 +169,38 @@
       <AdditionalDependencies>gdiplus.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
+  <!-- 演示素材拷进运行目录。
+       动图页与异步图片加载页需要真实的图片文件，而画廊的运行目录里原本
+       一张都没有，那两页只能显示"素材缺失"。素材放在本工程的 assets 目录
+       下随仓库一起管理，不依赖同仓库其它子项目的构建产物 —— balloonui
+       是独立仓库，让它的构建去读客户端的输出目录会在单独检出时立刻失败。
+       xcopy 的 /D 只拷新文件，所以只有第一次构建会真的复制。 -->
+  <Target Name="CopyGalleryAssets" AfterTargets="Build">
+    <Exec Command="xcopy /Y /D /I /E &quot;$(ProjectDir)assets\Image&quot; &quot;$(OutDir)Image&quot;" />
+    <Exec Command="xcopy /Y /D /I /E &quot;$(ProjectDir)assets\Face&quot; &quot;$(OutDir)Face&quot;" />
+  </Target>
   <ItemGroup>
     <!-- DuiGallery own sources -->
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GalleryFrame.cpp" />
-    <ClCompile Include="Pages.cpp" />
+    <ClCompile Include="GalleryNav.cpp" />
+    <ClCompile Include="GalleryText.cpp" />
+    <ClCompile Include="PageKit.cpp" />
+    <ClCompile Include="PageRegistry.cpp" />
     <ClCompile Include="CaptureMode.cpp" />
+    <!-- 演示页面按分组分文件，与 PageRegistry.h 里声明的取列表函数一一对应 -->
+    <ClCompile Include="Pages_Overview.cpp" />
+    <ClCompile Include="Pages_Layout.cpp" />
+    <ClCompile Include="Pages_Basic.cpp" />
+    <ClCompile Include="Pages_Input.cpp" />
+    <ClCompile Include="Pages_List.cpp" />
+    <ClCompile Include="Pages_Feedback.cpp" />
+    <ClCompile Include="Pages_Media.cpp" />
+    <ClCompile Include="Pages_Window.cpp" />
+    <ClCompile Include="Pages_Engine.cpp" />
+    <ClCompile Include="Pages_Tools.cpp" />
+    <ClCompile Include="Pages_Samples.cpp" />
+    <ClCompile Include="Pages_DocCaptures.cpp" />
     <!-- Kernel — DuiGallery still statically embeds (test harness with
          direct access to internals). -->
     <ClCompile Include="..\balloonui\DuiControl.cpp" />
@@ -182,6 +208,8 @@
     <ClCompile Include="..\balloonui\DuiTheme.cpp" />
     <ClCompile Include="..\balloonui\DuiMnemonic.cpp" />
     <ClCompile Include="..\balloonui\DuiFocusVisual.cpp" />
+    <ClCompile Include="..\balloonui\DuiCaret.cpp" />
+    <ClCompile Include="..\balloonui\DuiTrace.cpp" />
     <ClCompile Include="..\balloonui\DuiInspector.cpp" />
     <ClCompile Include="..\balloonui\DuiGolden.cpp" />
     <ClCompile Include="..\balloonui\DuiAsyncImage.cpp" />
@@ -206,6 +234,9 @@
     <ClCompile Include="..\balloonui\Tests\DuiEmojiPanelTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiFrameWindowTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiDpiTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiCaretTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiTextHostTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiRichEditTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiImageOleTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiDockTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiAnimationTests.cpp" />
@@ -223,12 +254,16 @@
     <ClCompile Include="..\balloonui\Tests\DuiMnemonicTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiTier4Tests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiInspectorGoldenTests.cpp" />
-    <ClCompile Include="..\balloonui\Tests\DuiRichEditHostTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiComboBoxTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiLabelTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiEditHostTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiEditTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiSearchBoxTests.cpp" />
     <ClCompile Include="..\balloonui\Tests\DuiLayoutTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiHostTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiScrollBarTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiSmallControlsTests.cpp" />
+    <ClCompile Include="..\balloonui\Tests\DuiToolTipTests.cpp" />
     <!-- Controls / Layout -->
     <ClCompile Include="..\balloonui\Controls\Layout\DuiLayout.cpp" />
     <ClCompile Include="..\balloonui\Controls\Layout\DuiSplitter.cpp" />
@@ -243,7 +278,10 @@
     <ClCompile Include="..\balloonui\Controls\Basic\DuiGroupBox.cpp" />
     <!-- Controls / Input -->
     <ClCompile Include="..\balloonui\Controls\Input\DuiEditHost.cpp" />
-    <ClCompile Include="..\balloonui\Controls\Input\DuiRichEditHost.cpp" />
+    <ClCompile Include="..\balloonui\Controls\Input\DuiTextServices.cpp" />
+    <ClCompile Include="..\balloonui\Controls\Input\DuiTextHost.cpp" />
+    <ClCompile Include="..\balloonui\Controls\Input\DuiEdit.cpp" />
+    <ClCompile Include="..\balloonui\Controls\Input\DuiRichEdit.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiSearchBox.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiSpinBox.cpp" />
     <ClCompile Include="..\balloonui\Controls\Input\DuiSlider.cpp" />

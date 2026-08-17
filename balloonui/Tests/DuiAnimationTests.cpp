@@ -250,6 +250,261 @@ static Result Test_MgrClearCancels()
     return OK(_T("MgrClearCancels"));
 }
 
+// ----- DuiAnimMgr self-driving pulse timer -----------------------------
+
+// Adding the first anim installs the shared pulse timer; Clear drops it.
+static Result Test_MgrSelfDriveOnAddOffOnClear()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("Drive/idleAfterClear"));
+    EXPECT_TRUE(m.GetPulseTimerId() == 0, _T("Drive/noIdWhenIdle"));
+
+    auto a = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){}));
+    m.Add(std::move(a));
+    EXPECT_TRUE(m.IsSelfDriving(), _T("Drive/onAfterAdd"));
+    EXPECT_TRUE(m.GetPulseTimerId() != 0, _T("Drive/idAfterAdd"));
+
+    m.Clear();
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("Drive/offAfterClear"));
+    EXPECT_TRUE(m.GetPulseTimerId() == 0, _T("Drive/idClearedAfterClear"));
+    return OK(_T("MgrSelfDriveOnAddOffOnClear"));
+}
+
+// The pulse timer is dropped as soon as the last anim finishes, so an
+// idle process never carries a timer around.
+static Result Test_MgrSelfDriveStopsWhenAllDone()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    auto a = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){}));
+    m.Add(std::move(a));
+    EXPECT_TRUE(m.IsSelfDriving(), _T("DriveStop/onWhileRunning"));
+
+    m.TickAll(5000);          // records start time, still running
+    EXPECT_INT(m.GetActiveCount(), 1, _T("DriveStop/stillActive"));
+    EXPECT_TRUE(m.IsSelfDriving(), _T("DriveStop/stillDriving"));
+
+    m.TickAll(5100);          // elapsed=100 -> done -> list empties
+    EXPECT_INT(m.GetActiveCount(), 0, _T("DriveStop/emptied"));
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("DriveStop/off"));
+    EXPECT_TRUE(m.GetPulseTimerId() == 0, _T("DriveStop/idCleared"));
+    return OK(_T("MgrSelfDriveStopsWhenAllDone"));
+}
+
+// Several anims share one timer: the id must not change as more are added.
+// ::SetTimer hands out a fresh id every call, so an unchanged id proves no
+// second timer was installed.
+static Result Test_MgrOneTimerForManyAnims()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    m.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){})));
+    UINT_PTR firstId = m.GetPulseTimerId();
+    EXPECT_TRUE(firstId != 0, _T("OneTimer/firstId"));
+
+    m.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        200, 0.0, 1.0, [](double){})));
+    m.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        300, 0.0, 1.0, [](double){})));
+    EXPECT_INT(m.GetActiveCount(), 3, _T("OneTimer/count"));
+    EXPECT_TRUE(m.GetPulseTimerId() == firstId, _T("OneTimer/sameId"));
+
+    // A tick that leaves work behind must not restart the timer either.
+    m.TickAll(6000);
+    EXPECT_TRUE(m.GetPulseTimerId() == firstId, _T("OneTimer/sameIdAfterTick"));
+
+    m.Clear();
+    return OK(_T("MgrOneTimerForManyAnims"));
+}
+
+// Hosts that already run their own pulse keep calling TickAll while the
+// manager's timer ticks too, so the same frame gets ticked twice. Progress
+// is computed from absolute time, so a repeated nowMs must be a no-op.
+static Result Test_MgrTickAllRepeatIsHarmless()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    double v = -1.0;
+    int finished = 0;
+    auto a = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        1000, 0.0, 100.0, [&](double x)
+        {
+            v = x;
+        }));
+    a->SetOnComplete([&]()
+    {
+        ++finished;
+    });
+    m.Add(std::move(a));
+
+    m.TickAll(2000);
+    m.TickAll(2000);          // same frame again
+    EXPECT_NEAR(v, 0.0, 1e-9, _T("Repeat/atStart"));
+    EXPECT_INT(m.GetActiveCount(), 1, _T("Repeat/stillOne"));
+
+    m.TickAll(2500);
+    EXPECT_NEAR(v, 50.0, 1e-9, _T("Repeat/half"));
+    m.TickAll(2500);
+    EXPECT_NEAR(v, 50.0, 1e-9, _T("Repeat/halfAgain"));
+
+    m.TickAll(3000);
+    EXPECT_NEAR(v, 100.0, 1e-9, _T("Repeat/end"));
+    EXPECT_INT(finished, 1, _T("Repeat/cbOnce"));
+    EXPECT_INT(m.GetActiveCount(), 0, _T("Repeat/removed"));
+
+    // Ticking an empty manager is legal and fires nothing.
+    m.TickAll(3000);
+    m.TickAll(4000);
+    EXPECT_INT(finished, 1, _T("Repeat/cbStillOnce"));
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("Repeat/idle"));
+    return OK(_T("MgrTickAllRepeatIsHarmless"));
+}
+
+// A completion callback that queues a follow-up anim (DuiToast chains
+// fade-in -> hold -> fade-out exactly this way) must not corrupt the walk,
+// and the queued anim must be advanced by the following ticks.
+static Result Test_MgrAddFromCompleteCallback()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    double chainedValue = -1.0;
+    int chainStarts = 0;
+    auto first = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){}));
+    first->SetOnComplete([&]()
+    {
+        ++chainStarts;
+        auto second = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+            100, 0.0, 10.0, [&](double x)
+            {
+                chainedValue = x;
+            }));
+        DuiAnimMgr::Inst().Add(std::move(second));
+    });
+    m.Add(std::move(first));
+
+    m.TickAll(7000);          // first records its start time
+    EXPECT_INT(m.GetActiveCount(), 1, _T("Chain/onlyFirst"));
+
+    m.TickAll(7100);          // first completes and queues the second
+    EXPECT_INT(chainStarts, 1, _T("Chain/cbFired"));
+    EXPECT_INT(m.GetActiveCount(), 1, _T("Chain/secondMerged"));
+    EXPECT_TRUE(m.IsSelfDriving(), _T("Chain/stillDriving"));
+
+    m.TickAll(7150);          // second records its start time -> t=0
+    EXPECT_NEAR(chainedValue, 0.0, 1e-9, _T("Chain/secondStart"));
+    m.TickAll(7200);          // t=0.5
+    EXPECT_NEAR(chainedValue, 5.0, 1e-9, _T("Chain/secondHalf"));
+    m.TickAll(7250);          // t=1 -> done
+    EXPECT_NEAR(chainedValue, 10.0, 1e-9, _T("Chain/secondEnd"));
+
+    EXPECT_INT(m.GetActiveCount(), 0, _T("Chain/allDone"));
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("Chain/idleAtEnd"));
+    return OK(_T("MgrAddFromCompleteCallback"));
+}
+
+// Clear() called from inside a completion callback is deferred to the end
+// of the walk: everything is dropped, including anims the same callback
+// queued, and the pulse timer goes away.
+static Result Test_MgrClearFromCompleteCallback()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    // A long-lived companion so the deferred Clear has something to drop.
+    m.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        10000, 0.0, 1.0, [](double){})));
+
+    auto trigger = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){}));
+    trigger->SetOnComplete([]()
+    {
+        DuiAnimMgr& mgr = DuiAnimMgr::Inst();
+        mgr.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+            100, 0.0, 1.0, [](double){})));
+        mgr.Clear();
+    });
+    m.Add(std::move(trigger));
+
+    m.TickAll(8000);
+    EXPECT_INT(m.GetActiveCount(), 2, _T("ClrCb/bothRunning"));
+
+    m.TickAll(8100);          // trigger completes -> deferred Clear
+    EXPECT_INT(m.GetActiveCount(), 0, _T("ClrCb/allDropped"));
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("ClrCb/idle"));
+    EXPECT_TRUE(m.GetPulseTimerId() == 0, _T("ClrCb/idCleared"));
+    return OK(_T("MgrClearFromCompleteCallback"));
+}
+
+// The other ordering: a callback that clears first and then queues a
+// replacement. The replacement belongs to a fresh round and must survive
+// the deferred cancel - that is how "hard cancel, then restart" reads.
+static Result Test_MgrClearThenAddFromCallback()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    double restarted = -1.0;
+    auto trigger = std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        100, 0.0, 1.0, [](double){}));
+    trigger->SetOnComplete([&]()
+    {
+        DuiAnimMgr& mgr = DuiAnimMgr::Inst();
+        mgr.Clear();
+        mgr.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+            100, 0.0, 20.0, [&](double x)
+            {
+                restarted = x;
+            })));
+    });
+    m.Add(std::move(trigger));
+
+    m.TickAll(8500);
+    m.TickAll(8600);          // trigger completes -> Clear then Add
+    EXPECT_INT(m.GetActiveCount(), 1, _T("ClrAdd/replacementKept"));
+    EXPECT_TRUE(m.IsSelfDriving(), _T("ClrAdd/stillDriving"));
+
+    m.TickAll(8650);          // replacement records its start time
+    EXPECT_NEAR(restarted, 0.0, 1e-9, _T("ClrAdd/start"));
+    m.TickAll(8750);          // t=1 -> done
+    EXPECT_NEAR(restarted, 20.0, 1e-9, _T("ClrAdd/end"));
+    EXPECT_INT(m.GetActiveCount(), 0, _T("ClrAdd/allDone"));
+    EXPECT_TRUE(!m.IsSelfDriving(), _T("ClrAdd/idleAtEnd"));
+    return OK(_T("MgrClearThenAddFromCallback"));
+}
+
+// A nested TickAll (from a setter or a completion callback) is ignored.
+// Without the guard the setter below would recurse until the stack blows.
+static Result Test_MgrNestedTickAllIgnored()
+{
+    DuiAnimMgr& m = DuiAnimMgr::Inst();
+    m.Clear();
+
+    int setterCalls = 0;
+    m.Add(std::unique_ptr<DuiDoubleAnim>(new DuiDoubleAnim(
+        1000, 0.0, 100.0, [&](double)
+        {
+            ++setterCalls;
+            DuiAnimMgr::Inst().TickAll(4000);   // re-entrant, must no-op
+        })));
+
+    m.TickAll(3000);
+    EXPECT_INT(setterCalls, 1, _T("Nested/onceOnly"));
+    EXPECT_INT(m.GetActiveCount(), 1, _T("Nested/stillActive"));
+
+    m.Clear();
+    EXPECT_INT(m.GetActiveCount(), 0, _T("Nested/cleanedUp"));
+    return OK(_T("MgrNestedTickAllIgnored"));
+}
+
 #undef EXPECT_INT
 #undef EXPECT_TRUE
 #undef EXPECT_NEAR
@@ -275,6 +530,14 @@ CString RunAll()
         { _T("DurationClamp"),   &Test_DurationClamp   },
         { _T("MgrAddAndTick"),   &Test_MgrAddAndTick   },
         { _T("MgrClearCancels"), &Test_MgrClearCancels },
+        { _T("MgrSelfDriveOnAddOffOnClear"),   &Test_MgrSelfDriveOnAddOffOnClear   },
+        { _T("MgrSelfDriveStopsWhenAllDone"),  &Test_MgrSelfDriveStopsWhenAllDone  },
+        { _T("MgrOneTimerForManyAnims"),       &Test_MgrOneTimerForManyAnims       },
+        { _T("MgrTickAllRepeatIsHarmless"),    &Test_MgrTickAllRepeatIsHarmless    },
+        { _T("MgrAddFromCompleteCallback"),    &Test_MgrAddFromCompleteCallback    },
+        { _T("MgrClearFromCompleteCallback"),  &Test_MgrClearFromCompleteCallback  },
+        { _T("MgrClearThenAddFromCallback"),   &Test_MgrClearThenAddFromCallback   },
+        { _T("MgrNestedTickAllIgnored"),       &Test_MgrNestedTickAllIgnored       },
     };
 
     CString out;

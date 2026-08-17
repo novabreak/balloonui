@@ -37,7 +37,6 @@ public:
     enum Mode { Qr, Loading };
 
     BEGIN_MSG_MAP(LoginFrame)
-        MESSAGE_HANDLER(WM_CREATE,  OnCreate_)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy_)
         MESSAGE_HANDLER(WM_TIMER,   OnTimer_)
         CHAIN_MSG_MAP(balloonwjui::DuiFrameWindow)
@@ -59,7 +58,6 @@ public:
     void SwitchMode(Mode m);
 
 private:
-    LRESULT OnCreate_ (UINT, WPARAM, LPARAM, BOOL& bHandled);
     LRESULT OnDestroy_(UINT, WPARAM, LPARAM, BOOL& bHandled);
     LRESULT OnTimer_  (UINT, WPARAM, LPARAM, BOOL& bHandled);
 

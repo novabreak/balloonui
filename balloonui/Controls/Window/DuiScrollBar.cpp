@@ -5,7 +5,6 @@
 
 #include "../../DuiHost.h"
 #include "../../DuiAnimation.h"
-#include "../../HwndHostControl.h"
 
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
@@ -453,6 +452,18 @@ bool DuiScrollBar::OnMouseMove(POINT pt, UINT /*mkFlags*/)
 
 bool DuiScrollBar::OnMouseWheel(POINT /*pt*/, short zDelta, UINT /*mkFlags*/)
 {
+    // 完全没有可滚范围（内容放得下，SetRange 收成了 [min, min]）时如实返回
+    // false，让滚轮沿父链继续上冒（见 DuiHost::DispatchMouseWheel）。否则嵌套
+    // 场景下——短列表 / 短内容的 DuiScrollView 放在外层滚动容器里——内层会把
+    // 滚轮拦下，外层再也滚不动。
+    //
+    // 注意这与"有可滚范围但已经滚到顶 / 底"是两回事：后者仍要返回 true 消费掉，
+    // 那条语义由 DuiHost::DispatchMouseWheel 的注释统一说明，不要一并改掉。
+    // SetRange 保证 m_max >= m_min，故此处等价于 m_max == m_min。
+    if (m_max <= m_min)
+    {
+        return false;
+    }
     TriggerShow();
     int delta = (zDelta > 0) ? -m_lineSize * kWheelLinesPerNotch : m_lineSize * kWheelLinesPerNotch;
     SetPos(m_pos + delta);
@@ -473,13 +484,9 @@ DuiScrollView::DuiScrollView()
 
 void DuiScrollView::SetContent(std::unique_ptr<DuiControl> content)
 {
-    // Suppress OnCommand routing for the duration of the swap. The OLD
-    // content tree may contain HWND-hosted children (DuiEditHost etc.).
-    // Their destruction inside RemoveChild's ~vector cascade fires
-    // synchronous EN_KILLFOCUS / EN_SETFOCUS to the host as focus migrates
-    // among siblings; without suppression, DuiHost::OnCommand walks
-    // m_root which is mid-teardown and may dereference already-freed
-    // siblings.
+    // 更换内容的整个过程都标记为「控件树变更中」：旧内容子树在下面的
+    // RemoveChild 里就地析构，期间宿主不得对控件树做任何遍历。与
+    // DuiHost::SetRoot、DuiFrameWindow::SetClientContent 同一口径。
     DuiHost* host = m_pHost;
     if (host)
     {
@@ -649,90 +656,6 @@ void DuiScrollView::UpdateRange()
     m_sb->SetLineSize(kScrollViewLineSizePx);
 }
 
-// Walk a DUI subtree and clip any HwndHostControl descendant's real Win32
-// HWND to the intersection of its DUI rect with `viewRect` (also DUI / host-
-// client coordinates). Without this, an EDIT/RICHEDIT scrolled partially out
-// of the ScrollView still paints at its full window rect; the slice that
-// pokes outside the viewport overlaps whatever sibling lives there (e.g. a
-// tab strip above the ScrollView), and WS_CLIPCHILDREN on the host blocks
-// the host's back-buffer from cleaning up — net effect is the EDIT's white
-// background overdraws the sibling's pixels.
-//
-// Mechanism is SetWindowRgn (not SetWindowPos), so the EDIT keeps its full
-// layout dimensions: text doesn't reflow on every scroll pixel, selections
-// survive, the EDIT's internal scrollbar position stays put. We just clip
-// what part of the HWND the OS lets through to the screen.
-//
-// The three branches map to the three observable cases the test suite locks
-// in (DuiTier3Tests::Test_HwndHostInSV_*):
-//   1. Empty intersection → fully out of viewport → empty region (HWND
-//      effectively invisible without a hide/show flicker).
-//   2. Intersection equals the window rect → fully in viewport → clear
-//      region (NULL) so OS uses default whole-HWND clip; cheaper than a
-//      redundant explicit-rect region, and required so re-entering the
-//      viewport after a scroll-out doesn't leave a stale clipped region.
-//   3. Partial → window-region with the visible slice in HWND-local coords
-//      (origin at the HWND's top-left, so subtract the window's left/top).
-//
-// 用寄宿窗口的【真实】窗口矩形（映射到 host 客户区坐标），而非控件 DUI 矩形
-// h->GetRect()：两者通常近似（窗口仅在 DUI 矩形内内缩 1px 边框 + margin），
-// 但 DuiEditHost 开了垂直居中（单行默认）后窗口会收成一行高并在框内下移，
-// 此时只有按真实窗口矩形算 SetWindowRgn 才不会与下移后的窗口错位。
-//
-// SetWindowRgn takes ownership of the HRGN on success, hence we don't
-// DeleteObject in the partial / empty branches.
-//
-// HwndHostControl exposes no DUI children below itself (HitTest stops there;
-// OnPaint is a no-op), so we don't recurse into its m_children.
-static void ClipHostedHwndsToView_(DuiControl* node, const RECT& viewRect)
-{
-    if (!node)
-    {
-        return;
-    }
-    HwndHostControl* h = dynamic_cast<HwndHostControl*>(node);
-    if (h)
-    {
-        HWND hw = h->GetHostedHwnd();
-        if (hw && ::IsWindow(hw))
-        {
-            // 真实窗口矩形 → host 客户区坐标（与 viewRect 同一坐标系）。
-            RECT wrScreen;
-            ::GetWindowRect(hw, &wrScreen);
-            HWND parent = ::GetParent(hw);
-            POINT lt = { wrScreen.left,  wrScreen.top };
-            POINT rb = { wrScreen.right, wrScreen.bottom };
-            ::ScreenToClient(parent, &lt);
-            ::ScreenToClient(parent, &rb);
-            RECT win = { lt.x, lt.y, rb.x, rb.y };
-            RECT inter;
-            if (!::IntersectRect(&inter, &win, &viewRect))
-            {
-                HRGN empty = ::CreateRectRgn(0, 0, 0, 0);
-                ::SetWindowRgn(hw, empty, TRUE);
-            }
-            else if (::EqualRect(&inter, &win))
-            {
-                ::SetWindowRgn(hw, NULL, TRUE);
-            }
-            else
-            {
-                RECT local = { inter.left   - win.left,
-                               inter.top    - win.top,
-                               inter.right  - win.left,
-                               inter.bottom - win.top };
-                HRGN rgn = ::CreateRectRgnIndirect(&local);
-                ::SetWindowRgn(hw, rgn, TRUE);
-            }
-        }
-        return;
-    }
-    for (auto& c : node->Children())
-    {
-        ClipHostedHwndsToView_(c.get(), viewRect);
-    }
-}
-
 void DuiScrollView::ApplyScrollToContent()
 {
     if (!m_content)
@@ -743,11 +666,6 @@ void DuiScrollView::ApplyScrollToContent()
     RECT r = m_contentNominalRect;
     ::OffsetRect(&r, 0, -pos);
     m_content->SetRect(r);
-    // After moving content (which cascaded SetWindowPos for any HwndHost
-    // descendants via their Layout), update each Hwnd's window region so
-    // the OS only paints the in-viewport slice. See ClipHostedHwndsToView_
-    // above for why this is required.
-    ClipHostedHwndsToView_(m_content, m_rcItem);
 }
 
 void DuiScrollView::OnSbScrolled(void* user, int /*newPos*/)
@@ -755,15 +673,10 @@ void DuiScrollView::OnSbScrolled(void* user, int /*newPos*/)
     DuiScrollView* self = static_cast<DuiScrollView*>(user);
     self->ApplyScrollToContent();
     self->Invalidate();
-    // Force the queued WM_PAINT to dispatch synchronously before returning,
-    // so the host's back buffer + BitBlt cover the EDIT/RICHEDIT's OLD
-    // on-screen pixels in the same frame as the SetWindowPos that moved it.
-    // Without this, WS_CLIPCHILDREN + suppressed WM_ERASEBKGND on the host
-    // leave the old child-HWND area untouched until the next async paint
-    // pass — visible as a "ghost" / drag trail of the previous EDIT
-    // location during fast scrolls. UpdateWindow bypasses the message
-    // queue and dispatches WM_PAINT directly to the WndProc, so by the
-    // time we return the host's update region is empty.
+    // 把这一次重绘同步刷出，不等系统下一次投递 WM_PAINT。上面的 Invalidate
+    // 只是把区域标记为待重绘，快速连续滚动时多次滚动会被合并到一次延后的
+    // 重绘里，画面跟不上滚动条。UpdateWindow 绕过消息队列，直接把 WM_PAINT
+    // 送进窗口过程，本函数返回时宿主的待重绘区域已经为空。
     if (self->m_pHost && self->m_pHost->m_hWnd)
     {
         ::UpdateWindow(self->m_pHost->m_hWnd);

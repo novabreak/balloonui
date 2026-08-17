@@ -7,7 +7,7 @@
 #include "../../DuiPaintAA.h"
 #include "../../DuiHost.h"
 #include "../Window/DuiScrollBar.h"
-#include "../Input/DuiEditHost.h"
+#include "../Input/DuiEdit.h"
 #include <algorithm>
 #include <gdiplus.h>
 
@@ -694,6 +694,171 @@ COLORREF DuiTreeView::GetItemStatusColor(int id) const
     return idx < 0 ? (COLORREF)CLR_INVALID : m_nodes[idx].statusColor;
 }
 
+// 设置节点状态点位图（32bpp premultiplied alpha；所有权归调用方，本控件只借用）。
+// 非空时取代 statusColor 的纯色圆点；nullptr 撤销、退回纯色圆点。
+void DuiTreeView::SetItemStatusIcon(int id, HBITMAP icon)
+{
+    int idx = IndexOf(id);
+    if (idx < 0)
+    {
+        return;
+    }
+    m_nodes[idx].statusIcon = icon;
+    Invalidate();
+}
+
+HBITMAP DuiTreeView::GetItemStatusIcon(int id) const
+{
+    int idx = IndexOf(id);
+    return idx < 0 ? nullptr : m_nodes[idx].statusIcon;
+}
+
+// 取某节点主标签文字实际占用的矩形。约定见头文件。
+//
+// 本函数的几何必须与 OnPaint 单列分支里画标签那一段<u>逐行同源</u>：xCursor 的推进
+// （缩进 → glyph 区 → icon）、textRight 的收缩（status dot / 右侧辅助文字）、以及
+// 主标签的字体与 DT 标志，任何一处对不上，调用方叠的标记就会错位。改动那一段时
+// 请同步本函数。
+bool DuiTreeView::GetItemLabelTextRect(int id, RECT& out) const
+{
+    // 多列模式下不画主标签（走 cell 那套），无从给出。
+    if (IsMultiCol())
+    {
+        return false;
+    }
+
+    int idx = IndexOf(id);
+    if (idx < 0)
+    {
+        return false;
+    }
+    const Node& n = m_nodes[idx];
+    if (n.label.IsEmpty())
+    {
+        return false;   // 没有文字，也就没有"文字之后"
+    }
+
+    // 该节点当前在第几可见行。被折叠 / 被隐藏时不在 m_visible 里。
+    int visRow = -1;
+    for (size_t i = 0; i < m_visible.size(); ++i)
+    {
+        if (m_visible[i] == idx)
+        {
+            visRow = (int)i;
+            break;
+        }
+    }
+    if (visRow < 0)
+    {
+        return false;
+    }
+
+    // 行矩形 —— 与 OnPaint 单列分支同口径。
+    RECT row;
+    row.left   = m_rcItem.left;
+    row.right  = m_rcItem.right;
+    row.top    = m_rcItem.top + visRow * m_rowH;
+    row.bottom = row.top + m_rowH;
+
+    // ---- 左边界：缩进 → 展开箭头区 → icon ----
+    int xCursor = row.left + n.depth * m_indent;
+    xCursor += kGlyphStripPx;
+    if (n.icon)
+    {
+        xCursor += m_iconSizePx + kCellPad;
+    }
+
+    // ---- 右边界：先贴右边距，再依次让开 status dot 与右侧辅助文字 ----
+    int textRight = row.right - kRightPad;
+    if (n.statusIcon != nullptr)
+    {
+        BITMAP bm = {};
+        if (::GetObject(n.statusIcon, sizeof(bm), &bm) != 0
+            && bm.bmWidth > 0 && bm.bmHeight > 0)
+        {
+            textRight = row.right - kRightPad - bm.bmWidth - kCellPad;
+        }
+    }
+    else if (n.statusColor != (COLORREF)CLR_INVALID)
+    {
+        textRight = row.right - kRightPad - kStatusDotR * 2 - kCellPad;
+    }
+
+    if (textRight <= xCursor)
+    {
+        return false;   // 可用宽度已经被挤没了，谈不上文字矩形
+    }
+
+    // 量文字要一个 HDC。本控件是自绘控件、没有自己的 DC，借桌面 DC 量即可 ——
+    // 只用来选字体做 GetTextExtentPoint32，不往上面画任何东西。
+    HDC hdc = ::GetDC(NULL);
+    if (hdc == NULL)
+    {
+        return false;
+    }
+
+    // 右侧辅助文字按自身宽度再收一次 textRight（与绘制路径同序）。
+    if (!n.rightText.IsEmpty())
+    {
+        HFONT rtFont = (m_rightTextPt > 0)
+                       ? DuiResMgr::Inst().GetFontByPointSize(m_rightTextPt, false)
+                       : DuiResMgr::Inst().GetDefaultFont();
+        HFONT oldRtFont = rtFont ? (HFONT)::SelectObject(hdc, rtFont) : nullptr;
+        SIZE rtSz = {};
+        ::GetTextExtentPoint32(hdc, n.rightText, n.rightText.GetLength(), &rtSz);
+        if (oldRtFont)
+        {
+            ::SelectObject(hdc, oldRtFont);
+        }
+        textRight = textRight - rtSz.cx - kCellPad;
+    }
+
+    if (textRight <= xCursor)
+    {
+        ::ReleaseDC(NULL, hdc);
+        return false;
+    }
+
+    // ---- 量主标签 ----
+    HFONT useFont = DuiResMgr::Inst().GetDefaultFont();
+    HFONT oldFont = useFont ? (HFONT)::SelectObject(hdc, useFont) : nullptr;
+    SIZE sz = {};
+    ::GetTextExtentPoint32(hdc, n.label, n.label.GetLength(), &sz);
+    TEXTMETRIC tm = {};
+    ::GetTextMetrics(hdc, &tm);
+    if (oldFont)
+    {
+        ::SelectObject(hdc, oldFont);
+    }
+    ::ReleaseDC(NULL, hdc);
+
+    // 放不下时绘制路径会加省略号截断，实际占满可用宽度到 textRight 为止。
+    int textW = sz.cx;
+    if (xCursor + textW > textRight)
+    {
+        textW = textRight - xCursor;
+    }
+
+    // ---- 垂直位置：单行居中；两行时主标签贴上半区下沿（DT_BOTTOM）----
+    const int lineH = tm.tmHeight;
+    int textTop = 0;
+    if (n.subLabel.IsEmpty())
+    {
+        textTop = (row.top + row.bottom - lineH) / 2;
+    }
+    else
+    {
+        const int mid = (row.top + row.bottom) / 2;
+        textTop = mid - lineH;
+    }
+
+    out.left   = xCursor;
+    out.right  = xCursor + textW;
+    out.top    = textTop;
+    out.bottom = textTop + lineH;
+    return true;
+}
+
 // 设置节点右侧辅助文字（仅单列模式生效）。空字符串 = 不绘。
 void DuiTreeView::SetItemRightText(int id, LPCTSTR rightText)
 {
@@ -1292,6 +1457,60 @@ bool DuiTreeView::IsColumnEditable(int col) const
     return m_columns[col].editable;
 }
 
+namespace {
+
+// 单元格内联编辑用的输入框。
+//
+// 与普通输入框的唯一差别是接管回车与 Esc。在单元格里这两个键的含义是"提交
+// 本次编辑"与"放弃本次编辑"，不能按普通输入框的规则转成通知发给宿主窗口 ——
+// 那样一来，用户在单元格里按 Esc 会顺带触发整个对话框的取消动作。
+//
+// 拦截必须在调用基类之前完成：基类一旦发出通知，就无法再撤回。
+//
+// 早先这两个键是由树自己的 OnKeyDown 处理的，但那段代码从来没有执行过 ——
+// 编辑期间键盘焦点在输入框上，按键根本传不到树。改由输入框自己处理之后这条
+// 路才真正通了。
+class TreeCellEditor : public DuiEdit
+{
+public:
+    // owner：所属的树。本控件不持有它的所有权，其生存期由树保证 ——
+    //        本控件是树的子控件，一定先于树析构。
+    explicit TreeCellEditor(DuiTreeView* owner)
+        : m_pOwner(owner)
+    {
+    }
+
+    // 按键处理。回车提交、Esc 取消，其余交给基类。
+    //   vk：虚拟键码。
+    //   flags：按键消息的附加标志位，原样转交基类。
+    //   返回：true 表示本控件已消费该按键。
+    bool OnKeyDown(UINT vk, UINT flags) override
+    {
+        if (m_pOwner != NULL && (vk == VK_RETURN || vk == VK_ESCAPE))
+        {
+            // 注意：下面这两个调用都会把本控件从控件树中移除并析构，也就是说
+            // 本对象在调用返回之后已经不存在。因此调用之后<u>不得再访问任何
+            // 成员</u>，必须直接返回。宿主一侧是安全的 —— DuiControl 的析构
+            // 函数会清除宿主持有的焦点、鼠标捕获、悬停三个指针。
+            if (vk == VK_RETURN)
+            {
+                m_pOwner->CommitEdit();
+            }
+            else
+            {
+                m_pOwner->CancelEdit();
+            }
+            return true;
+        }
+        return DuiEdit::OnKeyDown(vk, flags);
+    }
+
+private:
+    DuiTreeView* m_pOwner;   // 所属的树；本控件由树持有，此处不负责它的生存期
+};
+
+}   // namespace
+
 bool DuiTreeView::BeginEdit(int id, int col)
 {
     if (!m_editable)
@@ -1327,17 +1546,19 @@ bool DuiTreeView::BeginEdit(int id, int col)
     {
         CommitEdit();
     }
-    auto editor = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    std::unique_ptr<DuiEdit> editor(new TreeCellEditor(this));
     editor->SetText(GetCellText(id, col));
-    DuiEditHost* raw = editor.get();
+    DuiEdit* raw = editor.get();
     DuiControl::AddChild(std::move(editor));
     m_editor  = raw;
     m_editId  = id;
     m_editCol = col;
     PlaceEditor();
+    //—— 输入框是无窗口控件，构造完成即可使用，不存在创建子窗口这一步。
+    //   此处只需把键盘焦点交给它，使用户可以直接输入；焦点由宿主统一管理，
+    //   因此没有宿主时跳过。
     if (m_pHost)
     {
-        raw->EnsureCreated(m_pHost->m_hWnd);
         raw->SetFocus();
     }
     return true;
@@ -2289,7 +2510,35 @@ void DuiTreeView::OnPaint(HDC hdc, const RECT& rcDirty)
             }
 
             int textRight = row.right - kRightPad;
-            if (n.statusColor != (COLORREF)CLR_INVALID)
+            if (n.statusIcon != nullptr)
+            {
+                //—— 状态点位图路径：调用方已经把形状画好（如 IM 的在线 / 离开 /
+                //   忙碌 / 离线徽标），这里只摆位与合成。按位图自身尺寸绘制、不缩放，
+                //   贴行右端并垂直居中；位图须是 32bpp premultiplied alpha，故走
+                //   AlphaBlend(AC_SRC_OVER + AC_SRC_ALPHA)，与 alpha 路径的 tree
+                //   icon 同款。位图非法（GetObject 失败 / 尺寸为 0）时什么都不画，
+                //   也不回退到纯色圆点——调用方明确指定了位图，静默换一种画法反而
+                //   更难排查。
+                BITMAP bm = {};
+                if (::GetObject(n.statusIcon, sizeof(bm), &bm) != 0
+                    && bm.bmWidth > 0 && bm.bmHeight > 0)
+                {
+                    int cy   = (row.top + row.bottom) / 2;
+                    int left = row.right - kRightPad - bm.bmWidth;
+                    int top  = cy - bm.bmHeight / 2;
+
+                    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+                    HDC     memDC = ::CreateCompatibleDC(hdc);
+                    HGDIOBJ old   = ::SelectObject(memDC, n.statusIcon);
+                    ::AlphaBlend(hdc, left, top, bm.bmWidth, bm.bmHeight,
+                                 memDC, 0, 0, bm.bmWidth, bm.bmHeight, bf);
+                    ::SelectObject(memDC, old);
+                    ::DeleteDC(memDC);
+
+                    textRight = left - kCellPad;
+                }
+            }
+            else if (n.statusColor != (COLORREF)CLR_INVALID)
             {
                 int cy = (row.top + row.bottom) / 2;
                 int cx = row.right - kRightPad - kStatusDotR;
@@ -2384,6 +2633,18 @@ void DuiTreeView::OnPaint(HDC hdc, const RECT& rcDirty)
                 if (oldFont) { ::SelectObject(hdc, oldFont); }
             }
         }
+
+        //—— 绘制子控件（单列模式下只可能是内联编辑用的输入框）。
+        //   这一步不能省略：输入框已改为无窗口实现，它的像素完全由本控件的
+        //   绘制流程画出，父控件不绘制它就不会出现在界面上。旧实现在控件内部
+        //   嵌一个 Win32 输入框子窗口，由操作系统绘制在整个界面之上，因此
+        //   当年此处不绘制也没有影响。多列路径末尾的同名调用承担同一职责。
+        //
+        //   与滚动条不存在重复绘制：单列模式下本控件不带自己的滚动条 ——
+        //   EnsureScrollRanges 在单列模式开头即返回，不会创建滚动条；
+        //   ClearColumns 从多列切回单列时也会移除已建出的两条滚动条。因此
+        //   单列模式下 m_children 中能够存在的只有内联编辑的输入框一个。
+        DuiControl::OnPaint(hdc, rcDirty);
         return;
     }
 
@@ -3490,20 +3751,12 @@ bool DuiTreeView::OnSetCursor(POINT pt)
 
 bool DuiTreeView::OnKeyDown(UINT vk, UINT /*flags*/)
 {
-    if (m_editor)
-    {
-        if (vk == VK_RETURN)
-        {
-            CommitEdit();
-            return true;
-        }
-        if (vk == VK_ESCAPE)
-        {
-            CancelEdit();
-            return true;
-        }
-        return false;
-    }
+    // 正在内联编辑时，本函数收不到任何按键 —— 键盘焦点在编辑用的输入框上，
+    // 而宿主只把按键投给当前焦点控件、不沿控件树上冒。编辑期间的回车与 Esc
+    // 由输入框自己处理（见本文件里的 TreeCellEditor）。
+    //
+    // 这里原先有一段判 m_editor 非空、处理回车与 Esc 的代码，从来没有执行过，
+    // 2026-08-17 随输入框无窗口化一并删除。
     if (vk == VK_F2 && m_editable && m_curSelId != -1)
     {
         int col = IsMultiCol() ? m_focusCell.col : 0;

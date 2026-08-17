@@ -188,6 +188,16 @@ static Result Test_PerItemStateRoundTrip()
 
     t.SetItemStatusColor(r, RGB(60, 175, 80));
     EXPECT_INT((int)t.GetItemStatusColor(r), (int)RGB(60,175,80), _T("State/dotColor"));
+
+    // 状态点位图与状态点颜色是两条独立的存储：设了位图不该抹掉颜色，撤销位图
+    // (nullptr) 后应当退回纯色圆点那条老路径。
+    HBITMAP fakeStatusIcon = (HBITMAP)0xBEEF;
+    t.SetItemStatusIcon(r, fakeStatusIcon);
+    EXPECT_TRUE(t.GetItemStatusIcon(r) == fakeStatusIcon, _T("State/statusIcon"));
+    EXPECT_INT((int)t.GetItemStatusColor(r), (int)RGB(60,175,80), _T("State/dotColorKept"));
+
+    t.SetItemStatusIcon(r, nullptr);
+    EXPECT_TRUE(t.GetItemStatusIcon(r) == nullptr, _T("State/statusIconCleared"));
     return OK(_T("PerItemStateRoundTrip"));
 }
 
@@ -199,6 +209,7 @@ static Result Test_QueriesBogusIdSafe()
     EXPECT_TRUE(t.GetItemLabel(99).IsEmpty(), _T("Bogus/label"));
     EXPECT_TRUE(t.GetItemIcon(99) == nullptr, _T("Bogus/icon"));
     EXPECT_INT((int)t.GetItemStatusColor(99), (int)CLR_INVALID, _T("Bogus/dot"));
+    EXPECT_TRUE(t.GetItemStatusIcon(99) == nullptr, _T("Bogus/statusIcon"));
     return OK(_T("QueriesBogusIdSafe"));
 }
 

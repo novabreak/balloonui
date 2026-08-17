@@ -1,7 +1,6 @@
 #include "stdafx.h"
 #include "DuiControl.h"
 #include "DuiHost.h"
-#include "HwndHostControl.h"
 #include "BalloonUiFeatures.h"
 #if BUI_FEATURE_TOOLTIP
 #  include "Controls/Feedback/DuiToolTip.h"
@@ -16,10 +15,9 @@ DuiControl::DuiControl()
 
 DuiControl::~DuiControl()
 {
-    // Clear all host-held raw pointers to this control so a later mouse
-    // move / capture release / focus change doesn't dereference freed
-    // memory. Critical for tree-mutation paths (SetContent, SetRoot,
-    // RemoveChild) where many controls are destroyed back-to-back.
+    // 把宿主持有的、指向本控件的裸指针全部清掉，否则之后的一次鼠标移动、
+    // 释放捕获或焦点变化就会访问已释放的内存。在整棵子树连续析构的场景
+    // （DuiScrollView::SetContent、DuiHost::SetRoot、RemoveChild）里尤其关键。
     if (m_pHost)
     {
         if (m_pHost->GetDuiCapture() == this)
@@ -127,29 +125,6 @@ bool DuiControl::IsEffectivelyVisible() const
     return true;
 }
 
-void DuiControl::SyncHwndVisibilitySubtree_(DuiControl* node)
-{
-    if (!node) { return; }
-    HwndHostControl* h = dynamic_cast<HwndHostControl*>(node);
-    if (h)
-    {
-        HWND hw = h->GetHostedHwnd();
-        if (hw && ::IsWindow(hw))
-        {
-            BOOL want = h->IsEffectivelyVisible() ? TRUE : FALSE;
-            BOOL cur  = ::IsWindowVisible(hw);
-            if (want != cur)
-            {
-                ::ShowWindow(hw, want ? SW_SHOWNOACTIVATE : SW_HIDE);
-            }
-        }
-    }
-    for (auto& c : node->m_children)
-    {
-        SyncHwndVisibilitySubtree_(c.get());
-    }
-}
-
 void DuiControl::SetVisible(bool b)
 {
     if (m_bVisible == b)
@@ -158,9 +133,6 @@ void DuiControl::SetVisible(bool b)
     }
     m_bVisible = b;
     Invalidate();
-    // 同步本子树里所有 HwndHostControl 后代的真 HWND 显隐 —— 否则
-    // 隐藏一个 layout 父容器后，里面 EDIT / RICHEDIT 子窗仍透出来
-    SyncHwndVisibilitySubtree_(this);
 }
 
 void DuiControl::SetEnabled(bool b)
@@ -320,6 +292,13 @@ bool DuiControl::OnKillFocus()
 
 bool DuiControl::OnSetCursor(POINT)
 {
+    return false;
+}
+
+bool DuiControl::OnRawMessage(UINT, WPARAM, LPARAM, LRESULT&)
+{
+    // 默认不处理，宿主会把消息交回系统默认处理。只有需要完整窗口消息序列的
+    // 控件（如无窗口富文本控件）才覆写本方法。
     return false;
 }
 

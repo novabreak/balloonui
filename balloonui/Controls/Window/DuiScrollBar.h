@@ -31,6 +31,10 @@ namespace balloonwjui {
 // 工作机制（行为）：
 //   · track + thumb 实色绘制（暂无皮肤资产）。点击轨道 = 该方向 page
 //     步；按下 thumb 抓 capture 拖动；滚轮 = line 步。
+//   · 滚轮的消费与否：范围为空（max == min，内容放得下）时 OnMouseWheel
+//     返回 false，让事件沿父链上冒到外层滚动容器；只要范围非空就返回
+//     true，即便已经滚到顶 / 底也照样消费（详见
+//     DuiHost::DispatchMouseWheel 的约定说明）。
 //   · 每次位置变化触发两路通知：
 //     a) C 风格 OnScrollFn 回调（DuiScrollView 用，零 round-trip 直接
 //        改内容偏移）；
@@ -116,8 +120,8 @@ public:
     // 计时器（默认 800ms 没活动就渐出回 0）。caller 通常在自家 OnMouse
     // Move / OnMouseWheel / OnMouseLeave 里调，让"鼠标在 list 区域时显
     // 示，离开短延迟后隐藏"。FadeIn / FadeOut 跑 200ms 线性 alpha 动画
-    // （走 DuiAnimMgr，需 caller 在 host 里挂 60Hz pulse —— XChat MainFrame
-    // 的 kAnimPulseTimerId 已挂）。
+    // （走 DuiAnimMgr；DuiAnimMgr 自带 16ms 脉冲定时器，caller 不需要在
+    // host 里另挂 60Hz pulse）。
     void    SetAutoHide(bool b);
     bool    IsAutoHide() const            { return m_autoHide; }
 

@@ -27,9 +27,14 @@ approach:
   inside its client area;
 - Child controls derive from `DuiControl`, have no HWND of their own, and
   bubble events to the parent window through `WM_DUI_NOTIFY`;
-- RichEdit / Edit and other controls that depend on the system IME are an
-  explicit exception — they are embedded as "enclaves" through the
-  `HwndHostControl` adapter.
+- Even the controls that depend on the system IME are **no exception**: the
+  plain text box `DuiEdit` and the rich-text control `DuiRichEdit` are both
+  windowless — they drive the system RichEdit text-layout engine directly
+  and supply the IME context and caret themselves, so both are ordinary
+  members of the DUI tree. The library no longer provides any facility for
+  attaching a real window to the control tree: every control is painted by
+  the library itself, is clipped by its parent container, and takes part in
+  the same paint order.
 
 ![DUI control tree](docs/images/ctl-host-tree.png)
 
@@ -43,7 +48,7 @@ The library ships with 30+ controls, grouped into seven categories under
 | Category | Controls |
 |---|---|
 | Basic | `DuiLabel` `DuiButton` `DuiAvatar` `DuiBadge` `DuiSeparator` `DuiGroupBox` |
-| Input | `DuiEditHost` `DuiRichEditHost` `DuiSearchBox` `DuiSpinBox` `DuiComboBox` `DuiSlider` `DuiSwitch` |
+| Input | `DuiEdit` `DuiRichEdit` `DuiSearchBox` `DuiSpinBox` `DuiComboBox` `DuiSlider` `DuiSwitch` |
 | List / container | `DuiListBox` `DuiTreeView` `DuiTab` `DuiTabPage` `DuiMenu` `DuiMenuBar` |
 | Layout | `DuiLayout` (`DuiVBox` / `DuiHBox` / `DuiGrid`) `DuiDock` `DuiSplitter` |
 | Feedback | `DuiProgressBar` `DuiToolTip` `DuiPopupHost` `DuiEmojiPanel` |
@@ -60,12 +65,24 @@ the same click, focus, and hit-test plumbing.
 ![Button styles overview](docs/images/ctl-button-styles-overview.png)
 ![PushButton states](docs/images/ctl-button-pushbutton-states.png)
 
-### Input: native IME + composite controls
+### Input: windowless, native IME, composite controls
 
-`DuiEditHost` and `DuiRichEditHost` wrap real Win32 EDIT / RICHEDIT
-controls, guaranteeing that Chinese / Japanese / Korean IMEs work
-correctly. `DuiSearchBox`, `DuiSpinBox`, and `DuiComboBox` are composite
-controls built on top of `DuiEditHost`.
+The plain text box `DuiEdit` is a subclass of the rich-text control
+`DuiRichEdit`. Neither creates a child window: they drive the system
+RichEdit text-layout engine directly and own the IME context, the caret,
+and the scroll bars, which is what lets them be overlapped by other
+controls, live inside scroll containers, use a transparent background, and
+grow with their content. Password, multi-line and read-only are plain
+property bits that can be toggled at any time, with no destroy-and-rebuild.
+On top of the base class, `DuiEdit` adds what a plain text box needs:
+Enter does not insert a line break in single-line mode, inline icon gutters
+on the left and right, a password reveal toggle, and vertical centering of
+single-line text.
+
+The old class name `DuiEditHost` is kept as a compatibility shell over
+`DuiEdit` so existing code compiles unchanged; new code should use
+`DuiEdit` directly. `DuiSearchBox`, `DuiSpinBox`, and `DuiComboBox` are
+composite controls built on top of the text box.
 
 ![Edit states](docs/images/ctl-edit-states.png)
 ![SearchBox states](docs/images/ctl-searchbox-states.png)
@@ -182,7 +199,8 @@ extend the dispatch table through `CustomFactory`.
 that business code can compile only the controls it actually uses,
 excluding the unused `.cpp` files from the build entirely — which
 shrinks the final exe / DLL noticeably. Dependency consistency (for
-example, disabling `SCROLLBAR` also forces `LISTBOX` / `TREEVIEW` off)
+example, disabling `SCROLLBAR` also forces `LISTBOX` / `TREEVIEW` off;
+`EDIT` requires `RICHTEXT`, because `DuiEdit` derives from `DuiRichEdit`)
 is enforced inside the header via `#if/#error`, so you can't end up
 with a silently half-built library.
 

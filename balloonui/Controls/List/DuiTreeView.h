@@ -12,7 +12,7 @@
 
 namespace balloonwjui {
 
-class DuiEditHost;
+class DuiEdit;
 
 // =================================================================
 // DuiTreeView —— 树形列表 + 多列表格（展开 / 折叠 + Sel-cell + 6 种 cell 类型 + 冻结面板）
@@ -282,6 +282,37 @@ public:
     // 滚出去）。CLR_INVALID = 不画。
     void     SetItemStatusColor(int id, COLORREF color);
     COLORREF GetItemStatusColor(int id) const;
+    // 状态点位图 —— 给状态点画上"形状"用。SetItemStatusColor 只能表达颜色，
+    // 当调用方需要用<u>形状</u>区分状态时（典型用例：IM 的在线 / 离开 / 忙碌 /
+    // 离线，只靠颜色在 10px 上分不开，色觉障碍用户更是完全分不出），改用本接口
+    // 把画好的位图传进来。本控件只负责摆位与合成，不关心图形语义。
+    //   · 位图须是 <u>32bpp premultiplied alpha</u>（做法同 SetIconUsesAlpha(true)
+    //     那条路径），绘制走 AlphaBlend，边缘由调用方自己抗锯齿。
+    //   · 按位图<u>自身尺寸</u>绘制，不缩放；贴在行右端（同 status dot 的位置），
+    //     垂直居中，右侧留 kRightPad。右侧辅助文字照常收缩让位。
+    //   · <u>所有权归调用方</u>，本控件只借用指针 —— 与 SetItemIcon 的既有约定一致。
+    //     调用方须保证位图活到该节点不再显示为止，并自行 DeleteObject。
+    //   · 非空时<u>取代</u> statusColor 的纯色圆点（两者都设时以位图为准）；
+    //     传 nullptr 撤销，退回 statusColor 的老行为。
+    void     SetItemStatusIcon (int id, HBITMAP icon);
+    HBITMAP  GetItemStatusIcon (int id) const;
+    // 取某节点<u>主标签文字实际占用</u>的矩形（宿主客户区坐标，与 OnPaint 同一坐标系）。
+    //
+    // 用途：宿主想在标签文字之后叠加一个小标记（如"特别关注"星标）时，需要知道文字
+    // 画到哪儿结束。该位置取决于缩进层级、展开箭头区宽、图标尺寸与内边距，还要考虑
+    // 右侧 status dot / 右侧辅助文字对可用宽度的收缩，以及超长时的省略号截断 ——
+    // 这些全是本控件的内部布局，外部无从算起，故由本控件给出。
+    //
+    //   · 返回的是<u>已按可用宽度截断后</u>的实际绘制宽度：文字放得下时 right 即文字
+    //     末尾，放不下（画了省略号）时 right 等于可用区右边界。
+    //   · 两行节点（设了 subLabel）返回的是<u>主标签那一行</u>的矩形；单行节点返回
+    //     垂直居中那一行的矩形。两种情况下 top / bottom 都是文字自身的上下沿，
+    //     调用方据此垂直居中自己的标记即可。
+    //   · 仅<u>单列模式</u>有效。多列模式、id 非法、节点当前不可见（被折叠 / 被隐藏）、
+    //     标签为空时返回 false，out 不写。
+    //   · 不含滚动之外的任何缓存：每次调用现算，故应在绘制期或响应事件时调用，
+    //     不要长期持有返回值 —— 展开 / 折叠 / 改标签之后它就过期了。
+    bool     GetItemLabelTextRect(int id, RECT& out) const;
     // 节点右侧辅助文字（仅<u>单列模式</u>有效；多列模式忽略）。
     // 显示位置：行右端的 status dot 左侧（无 dot 时贴 kRightPad 右边距），
     // 与主 label 同行右对齐。空字符串 = 不绘。典型用例：分组节点的
@@ -503,6 +534,7 @@ private:
         HBITMAP               icon         = nullptr; // legacy tree icon（col 0 文字左侧）
         LPARAM                param        = 0;
         COLORREF              statusColor  = CLR_INVALID;  // CLR_INVALID = no dot
+        HBITMAP               statusIcon   = nullptr;      // 状态点位图；非空时<u>取代</u> statusColor 的纯色圆点
         std::vector<Cell>     cells;                  // 多列模式 cells[col]；单列模式空
     };
 
@@ -645,7 +677,10 @@ private:
 
     // ---- editing state ----
     bool                   m_editable = false;
-    DuiEditHost*           m_editor   = nullptr;   // 子控件；指针由 m_children 持有
+    // 内联编辑用的输入框。仅在编辑期间存在：BeginEdit 建出来并加进 m_children，
+    // CommitEdit / CancelEdit 把它移除。对象由 m_children 持有，这里只是裸指针，
+    // 移除之后必须同步置空。它是无窗口控件，像素由本控件的 OnPaint 一并画出。
+    DuiEdit*               m_editor   = nullptr;
     int                    m_editId   = -1;
     int                    m_editCol  = -1;
 

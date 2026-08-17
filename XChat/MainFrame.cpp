@@ -51,11 +51,6 @@ static const int kNavSelBarH    = 24;
 // nav icon 中央占位圆点直径。idle / selected 同直径，只换色。
 static const int kNavDotDiameter = 12;
 
-// 主窗 60Hz 动画 pulse —— Phase 2 阶段没动画控件，但保留方便后续 Phase
-// 5+ spinner / 切换动画用。
-static const UINT_PTR kAnimPulseTimerId = 0xA01;
-static const UINT     kAnimPulseMs      = 16;
-
 // ---- 资源路径解析（与 LoginFrame 同语义，目前各自一份；多处共用时再
 //     抽到 XmlFactory.cpp）。 -------------------------------------------------
 
@@ -2180,28 +2175,14 @@ DuiXmlBuilder::CustomFactory MakeMainXmlFactory()
 // =============================================================================
 // XChatMainFrame
 // =============================================================================
-LRESULT XChatMainFrame::OnCreate_(UINT, WPARAM, LPARAM, BOOL& bHandled)
-{
-    SetTimer(kAnimPulseTimerId, kAnimPulseMs);
-    bHandled = FALSE;
-    return 0;
-}
-
+// 本 frame 不挂动画 pulse：DuiAnimMgr 自带 16ms 共享线程定时器，活跃列表
+// 由空变非空时自行装上、清空时自行卸掉，后续加 spinner 或切换动画也不需要
+// 在这里补 timer。析构时仍要 Clear()，把可能还持有本窗口控件指针的动画一起
+// 取消掉（Clear 同时会卸掉那个共享定时器）。
 LRESULT XChatMainFrame::OnDestroy_(UINT, WPARAM, LPARAM, BOOL& bHandled)
 {
-    KillTimer(kAnimPulseTimerId);
     DuiAnimMgr::Inst().Clear();
     ::PostQuitMessage(0);
-    bHandled = FALSE;
-    return 0;
-}
-
-LRESULT XChatMainFrame::OnTimer_(UINT, WPARAM wp, LPARAM, BOOL& bHandled)
-{
-    if (wp == kAnimPulseTimerId)
-    {
-        DuiAnimMgr::Inst().TickAll(::GetTickCount());
-    }
     bHandled = FALSE;
     return 0;
 }

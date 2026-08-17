@@ -155,6 +155,489 @@ static Result Test_SetCallbacksBeforeRegister()
     return OK(_T("SetCallbacksBeforeRegister"));
 }
 
+// ----- 拖动过程回调（DragEnter / DragOver / DragLeave / 带坐标的 Drop）-------
+//
+// 这一组不依赖真实的鼠标拖放：直接取出内部的 IDropTarget，喂一个只提供 CF_HDROP
+// 的假 IDataObject，把 OLE 会调的四个方法自己调一遍。helper <u>不注册</u>到窗口，
+// 这样宿主窗口为空、坐标原样透传，断言里的期望值是确定的；屏幕坐标到客户区坐标
+// 的换算另由 ClientPointFromScreen 那两条用例单独覆盖。
+
+// 只提供 CF_HDROP 的最小 IDataObject。offerFiles 为 false 时什么格式都不给，
+// 用来构造"格式不支持"的场景。
+class FakeFilesDataObject : public IDataObject
+{
+public:
+    explicit FakeFilesDataObject(bool offerFiles)
+        : m_ref(1)
+        , m_offerFiles(offerFiles)
+    {
+    }
+    virtual ~FakeFilesDataObject() = default;
+
+    // ---- IUnknown ----
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override
+    {
+        if (!ppv)
+        {
+            return E_POINTER;
+        }
+        if (riid == IID_IUnknown || riid == IID_IDataObject)
+        {
+            *ppv = static_cast<IDataObject*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override
+    {
+        return (ULONG)InterlockedIncrement(&m_ref);
+    }
+    ULONG STDMETHODCALLTYPE Release() override
+    {
+        LONG r = InterlockedDecrement(&m_ref);
+        if (r == 0)
+        {
+            delete this;
+        }
+        return (ULONG)r;
+    }
+
+    // ---- IDataObject：只实现 QueryGetData / GetData，其余一律不支持 ----
+    HRESULT STDMETHODCALLTYPE QueryGetData(FORMATETC* pFmt) override
+    {
+        if (!pFmt)
+        {
+            return E_POINTER;
+        }
+        if (m_offerFiles && pFmt->cfFormat == CF_HDROP && (pFmt->tymed & TYMED_HGLOBAL))
+        {
+            return S_OK;
+        }
+        return DV_E_FORMATETC;
+    }
+    HRESULT STDMETHODCALLTYPE GetData(FORMATETC* pFmt, STGMEDIUM* pMed) override
+    {
+        if (!pFmt || !pMed)
+        {
+            return E_POINTER;
+        }
+        if (!m_offerFiles || pFmt->cfFormat != CF_HDROP || !(pFmt->tymed & TYMED_HGLOBAL))
+        {
+            return DV_E_FORMATETC;
+        }
+
+        HGLOBAL h = BuildHDrop();
+        if (!h)
+        {
+            return E_OUTOFMEMORY;
+        }
+        ZeroMemory(pMed, sizeof(*pMed));
+        pMed->tymed          = TYMED_HGLOBAL;
+        pMed->hGlobal        = h;
+        pMed->pUnkForRelease = nullptr;   // 由调用方 ReleaseStgMedium 负责释放
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetDataHere(FORMATETC*, STGMEDIUM*) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE GetCanonicalFormatEtc(FORMATETC*, FORMATETC*) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE SetData(FORMATETC*, STGMEDIUM*, BOOL) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE EnumFormatEtc(DWORD, IEnumFORMATETC**) override
+    {
+        return E_NOTIMPL;
+    }
+    HRESULT STDMETHODCALLTYPE DAdvise(FORMATETC*, DWORD, IAdviseSink*, DWORD*) override
+    {
+        return OLE_E_ADVISENOTSUPPORTED;
+    }
+    HRESULT STDMETHODCALLTYPE DUnadvise(DWORD) override
+    {
+        return OLE_E_ADVISENOTSUPPORTED;
+    }
+    HRESULT STDMETHODCALLTYPE EnumDAdvise(IEnumSTATDATA**) override
+    {
+        return OLE_E_ADVISENOTSUPPORTED;
+    }
+
+    // 本假对象每次 GetData 都给的那两个路径，断言里要对照。
+    static LPCTSTR Path0()
+    {
+        return _T("C:\\drop\\a.txt");
+    }
+    static LPCTSTR Path1()
+    {
+        return _T("C:\\drop\\b.png");
+    }
+
+private:
+    // 现搓一块 CF_HDROP 内存：DROPFILES 头 + 两个以 '\0' 结尾的路径 + 一个结尾哨兵。
+    static HGLOBAL BuildHDrop()
+    {
+        LPCTSTR p0 = Path0();
+        LPCTSTR p1 = Path1();
+        SIZE_T len0 = _tcslen(p0);
+        SIZE_T len1 = _tcslen(p1);
+        SIZE_T payloadChars = len0 + 1 + len1 + 1 + 1;
+        SIZE_T total = sizeof(DROPFILES) + payloadChars * sizeof(TCHAR);
+
+        HGLOBAL h = ::GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, total);
+        if (!h)
+        {
+            return nullptr;
+        }
+        DROPFILES* df = (DROPFILES*)::GlobalLock(h);
+        df->pFiles = sizeof(DROPFILES);
+#ifdef _UNICODE
+        df->fWide = TRUE;
+#else
+        df->fWide = FALSE;
+#endif
+        TCHAR* paths = (TCHAR*)((BYTE*)df + sizeof(DROPFILES));
+        _tcscpy_s(paths, len0 + 1, p0);
+        _tcscpy_s(paths + len0 + 1, len1 + 1, p1);
+        paths[len0 + 1 + len1 + 1] = 0;
+        ::GlobalUnlock(h);
+        return h;
+    }
+
+    LONG m_ref;
+    bool m_offerFiles;
+};
+
+// 回调探针：记下各回调被调了几次、拿到了什么。用静态函数而不是 lambda，与仓库
+// "尽量不使用 lambda" 的约定一致。
+struct DragProbe
+{
+    int   enterCount;       // DragEnter 回调次数
+    int   overCount;        // DragOver 回调次数
+    int   leaveCount;       // DragLeave 回调次数（含 Drop 之后补的那次）
+    int   filesCount;       // 旧的无坐标文件回调次数
+    int   filesAtPtCount;   // 新的带坐标文件回调次数
+    bool  lastHasFiles;     // 最近一次 DragEnter 拿到的 hasFiles
+    POINT lastEnterPt;      // 最近一次 DragEnter 拿到的坐标
+    POINT lastOverPt;       // 最近一次 DragOver 拿到的坐标
+    POINT lastDropPt;       // 最近一次带坐标文件回调拿到的落点
+    int   lastFileCount;    // 最近一次文件回调拿到几个路径
+    bool  enterReturn;      // DragEnter 回调的返回值（测试用例事先设定）
+    bool  overReturn;       // DragOver 回调的返回值（同上；false = 当前位置不能放）
+};
+
+static DragProbe g_probe;
+
+static void ResetProbe(bool enterReturn)
+{
+    ZeroMemory(&g_probe, sizeof(g_probe));
+    g_probe.enterReturn = enterReturn;
+    g_probe.overReturn  = true;   // 默认"当前位置能放"，只有专门测改判的用例才置 false
+}
+
+static bool OnEnterProbe(const POINT& pt, bool hasFiles)
+{
+    ++g_probe.enterCount;
+    g_probe.lastEnterPt  = pt;
+    g_probe.lastHasFiles = hasFiles;
+    return g_probe.enterReturn;
+}
+
+static bool OnOverProbe(const POINT& pt)
+{
+    ++g_probe.overCount;
+    g_probe.lastOverPt = pt;
+    return g_probe.overReturn;
+}
+
+static void OnLeaveProbe()
+{
+    ++g_probe.leaveCount;
+}
+
+static void OnFilesProbe(const std::vector<CString>& files)
+{
+    ++g_probe.filesCount;
+    g_probe.lastFileCount = (int)files.size();
+}
+
+static void OnFilesAtPointProbe(const std::vector<CString>& files, const POINT& pt)
+{
+    ++g_probe.filesAtPtCount;
+    g_probe.lastFileCount = (int)files.size();
+    g_probe.lastDropPt    = pt;
+}
+
+// 造一个屏幕坐标点，供各拖放用例复用。
+static POINTL MakeScreenPt(LONG x, LONG y)
+{
+    POINTL pt;
+    pt.x = x;
+    pt.y = y;
+    return pt;
+}
+
+// 拖入 → 拖动 → 落手：三个回调都收到，坐标透传正确，hasFiles 为真。
+static Result Test_DragCallbacksFullFlow()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+    h.SetFilesAtPointCallback(&OnFilesAtPointProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    EXPECT_TRUE(dt != nullptr, _T("Flow/dt"));
+
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_NONE;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(11, 22), &effect);
+    EXPECT_INT(g_probe.enterCount, 1, _T("Flow/enterCount"));
+    EXPECT_TRUE(g_probe.lastHasFiles, _T("Flow/hasFiles"));
+    EXPECT_INT((int)g_probe.lastEnterPt.x, 11, _T("Flow/enterX"));
+    EXPECT_INT((int)g_probe.lastEnterPt.y, 22, _T("Flow/enterY"));
+    EXPECT_INT((int)effect, (int)DROPEFFECT_COPY, _T("Flow/enterEffect"));
+
+    dt->DragOver(MK_LBUTTON, MakeScreenPt(33, 44), &effect);
+    EXPECT_INT(g_probe.overCount, 1, _T("Flow/overCount"));
+    EXPECT_INT((int)g_probe.lastOverPt.x, 33, _T("Flow/overX"));
+    EXPECT_INT((int)g_probe.lastOverPt.y, 44, _T("Flow/overY"));
+    EXPECT_INT((int)effect, (int)DROPEFFECT_COPY, _T("Flow/overEffect"));
+
+    dt->Drop(pDO, MK_LBUTTON, MakeScreenPt(55, 66), &effect);
+    EXPECT_INT(g_probe.filesAtPtCount, 1, _T("Flow/dropCount"));
+    EXPECT_INT(g_probe.lastFileCount, 2, _T("Flow/dropFiles"));
+    EXPECT_INT((int)g_probe.lastDropPt.x, 55, _T("Flow/dropX"));
+    EXPECT_INT((int)g_probe.lastDropPt.y, 66, _T("Flow/dropY"));
+    EXPECT_INT((int)effect, (int)DROPEFFECT_COPY, _T("Flow/dropEffect"));
+    // 落手之后 OLE 不再调 DragLeave，本类补一次，调用方才能在一处收起提示。
+    EXPECT_INT(g_probe.leaveCount, 1, _T("Flow/leaveAfterDrop"));
+    // 装了带坐标的回调之后，旧的无坐标回调不应再被调（这里根本没装）。
+    EXPECT_INT(g_probe.filesCount, 0, _T("Flow/noLegacyCb"));
+
+    pDO->Release();
+    return OK(_T("DragCallbacksFullFlow"));
+}
+
+// DragEnter 回调返回 false：光标显示禁止符，落手时什么都不做，但提示仍要收起来。
+static Result Test_DragEnterReject()
+{
+    ResetProbe(false);
+
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+    h.SetFilesAtPointCallback(&OnFilesAtPointProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_COPY;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(1, 2), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("Reject/enterEffect"));
+
+    dt->DragOver(MK_LBUTTON, MakeScreenPt(3, 4), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("Reject/overEffect"));
+    // 拒收之后不再回调 DragOver，免得调用方给一次收不下的拖动更新提示。
+    EXPECT_INT(g_probe.overCount, 0, _T("Reject/noOver"));
+
+    dt->Drop(pDO, MK_LBUTTON, MakeScreenPt(5, 6), &effect);
+    EXPECT_INT(g_probe.filesAtPtCount, 0, _T("Reject/noDrop"));
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("Reject/dropEffect"));
+    EXPECT_INT(g_probe.leaveCount, 1, _T("Reject/leaveAfterDrop"));
+
+    pDO->Release();
+    return OK(_T("DragEnterReject"));
+}
+
+// 拖离（没有落手）：canDrop 复位，onLeave 回调一次。
+static Result Test_DragLeaveNotifies()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_NONE;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(7, 8), &effect);
+    dt->DragLeave();
+    EXPECT_INT(g_probe.leaveCount, 1, _T("Leave/count"));
+
+    // 拖离之后再来一次 DragOver（正常流程里不会发生，这里验证状态确实复位了）：
+    // 应按拒收处理，不回调、不给 COPY。
+    effect = DROPEFFECT_COPY;
+    dt->DragOver(MK_LBUTTON, MakeScreenPt(9, 10), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("Leave/overAfter"));
+    EXPECT_INT(g_probe.overCount, 0, _T("Leave/noOverAfter"));
+
+    pDO->Release();
+    return OK(_T("DragLeaveNotifies"));
+}
+
+// 只装旧的无坐标文件回调（老调用方的写法）：行为不变，照样收到文件。
+static Result Test_LegacyFilesCallbackStillWorks()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetCallbacks(&OnFilesProbe, nullptr);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_NONE;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(0, 0), &effect);
+    dt->Drop(pDO, MK_LBUTTON, MakeScreenPt(0, 0), &effect);
+    EXPECT_INT(g_probe.filesCount, 1, _T("Legacy/count"));
+    EXPECT_INT(g_probe.lastFileCount, 2, _T("Legacy/files"));
+    EXPECT_INT(g_probe.filesAtPtCount, 0, _T("Legacy/noAtPt"));
+    // 没装拖动过程回调时不该崩，也不该有任何 leave 计数。
+    EXPECT_INT(g_probe.leaveCount, 0, _T("Legacy/noLeaveCb"));
+
+    pDO->Release();
+    return OK(_T("LegacyFilesCallbackStillWorks"));
+}
+
+// 两个文件回调都装：只走带坐标的那个，避免同一次拖放被处理两遍。
+static Result Test_FilesAtPointWinsOverLegacy()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetCallbacks(&OnFilesProbe, nullptr);
+    h.SetFilesAtPointCallback(&OnFilesAtPointProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_NONE;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(0, 0), &effect);
+    dt->Drop(pDO, MK_LBUTTON, MakeScreenPt(12, 34), &effect);
+    EXPECT_INT(g_probe.filesAtPtCount, 1, _T("Both/atPt"));
+    EXPECT_INT(g_probe.filesCount, 0, _T("Both/legacyNotCalled"));
+    EXPECT_INT((int)g_probe.lastDropPt.x, 12, _T("Both/x"));
+    EXPECT_INT((int)g_probe.lastDropPt.y, 34, _T("Both/y"));
+
+    pDO->Release();
+    return OK(_T("FilesAtPointWinsOverLegacy"));
+}
+
+// 数据格式不支持（既没有 CF_HDROP 也没有 CF_BITMAP）：不回调拖入，effect 为 NONE。
+static Result Test_UnsupportedFormatRejected()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(false);
+    DWORD effect = DROPEFFECT_COPY;
+
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(0, 0), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("Unsup/effect"));
+    // 格式就不支持，连问都不必问调用方。
+    EXPECT_INT(g_probe.enterCount, 0, _T("Unsup/noEnterCb"));
+
+    pDO->Release();
+    return OK(_T("UnsupportedFormatRejected"));
+}
+
+// ----- 屏幕坐标 → 客户区坐标 ------------------------------------------
+
+// 窗口为空时原样返回屏幕坐标（换算不了也不能返回 (0,0)，那会被误当成左上角）。
+static Result Test_ClientPointFromScreenNullHwnd()
+{
+    POINT pt = DuiDropTargetHelper::ClientPointFromScreen(nullptr, MakeScreenPt(640, 480));
+    EXPECT_INT((int)pt.x, 640, _T("Cvt/nullX"));
+    EXPECT_INT((int)pt.y, 480, _T("Cvt/nullY"));
+    return OK(_T("ClientPointFromScreenNullHwnd"));
+}
+
+// 有真实窗口时按客户区原点换算。
+static Result Test_ClientPointFromScreenRealHwnd()
+{
+    HINSTANCE hInst = ::GetModuleHandle(nullptr);
+    HWND hwnd = ::CreateWindowEx(0, _T("STATIC"), _T(""),
+                                 WS_OVERLAPPED | WS_POPUP,
+                                 100, 50, 200, 200, nullptr, nullptr, hInst, nullptr);
+    if (!hwnd)
+    {
+        return Fail(_T("Cvt/createHwnd"), _T("CreateWindowEx failed"));
+    }
+
+    // 先问一次客户区原点在屏幕上的位置，再据它造一个"客户区 (37, 23)"的屏幕坐标。
+    POINT origin;
+    origin.x = 0;
+    origin.y = 0;
+    ::ClientToScreen(hwnd, &origin);
+
+    const LONG kOffsetX = 37;   // 期望换算出来的客户区 x
+    const LONG kOffsetY = 23;   // 期望换算出来的客户区 y
+    POINT pt = DuiDropTargetHelper::ClientPointFromScreen(
+        hwnd, MakeScreenPt(origin.x + kOffsetX, origin.y + kOffsetY));
+
+    bool okX = (pt.x == kOffsetX);
+    bool okY = (pt.y == kOffsetY);
+    ::DestroyWindow(hwnd);
+
+    EXPECT_TRUE(okX, _T("Cvt/realX"));
+    EXPECT_TRUE(okY, _T("Cvt/realY"));
+    return OK(_T("ClientPointFromScreenRealHwnd"));
+}
+
+// DragOver 回调返回 false：光标当前位置不能放（窗口内只有一块区域收拖放时靠它逐帧
+// 改判 —— 光标在同一个窗口里移动是不会再触发 DragEnter 的）。
+static Result Test_DragOverRejectsThisSpot()
+{
+    ResetProbe(true);
+
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+
+    IDropTarget* dt = h.GetDropTarget();
+    FakeFilesDataObject* pDO = new FakeFilesDataObject(true);
+    DWORD effect = DROPEFFECT_NONE;
+
+    // 拖入时是"能收"的
+    dt->DragEnter(pDO, MK_LBUTTON, MakeScreenPt(1, 2), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_COPY, _T("OverRej/enter"));
+
+    // 移到不能放的位置：effect 变成 NONE
+    g_probe.overReturn = false;
+    dt->DragOver(MK_LBUTTON, MakeScreenPt(3, 4), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_NONE, _T("OverRej/no"));
+    EXPECT_INT(g_probe.overCount, 1, _T("OverRej/count1"));
+
+    // 再移回能放的位置：effect 恢复成 COPY
+    g_probe.overReturn = true;
+    dt->DragOver(MK_LBUTTON, MakeScreenPt(5, 6), &effect);
+    EXPECT_INT((int)effect, (int)DROPEFFECT_COPY, _T("OverRej/yes"));
+    EXPECT_INT(g_probe.overCount, 2, _T("OverRej/count2"));
+
+    pDO->Release();
+    return OK(_T("DragOverRejectsThisSpot"));
+}
+
+// 未 Register 就装拖动回调：不该崩，也不该被当成已注册。
+static Result Test_SetDragCallbacksBeforeRegister()
+{
+    DuiDropTargetHelper h;
+    h.SetDragCallbacks(&OnEnterProbe, &OnOverProbe, &OnLeaveProbe);
+    h.SetFilesAtPointCallback(&OnFilesAtPointProbe);
+    EXPECT_TRUE(!h.IsRegistered(), _T("PreReg/notReg"));
+    EXPECT_TRUE(h.GetDropTarget() != nullptr, _T("PreReg/dt"));
+    return OK(_T("SetDragCallbacksBeforeRegister"));
+}
+
 #undef EXPECT_INT
 #undef EXPECT_TRUE
 #undef EXPECT_STR
@@ -176,6 +659,16 @@ CString RunAll()
         { _T("ExtractFromHDrop"),           &Test_ExtractFromHDrop           },
         { _T("ExtractFromNullDropEmpty"),   &Test_ExtractFromNullDropEmpty   },
         { _T("SetCallbacksBeforeRegister"), &Test_SetCallbacksBeforeRegister },
+        { _T("DragCallbacksFullFlow"),         &Test_DragCallbacksFullFlow         },
+        { _T("DragEnterReject"),               &Test_DragEnterReject               },
+        { _T("DragLeaveNotifies"),             &Test_DragLeaveNotifies             },
+        { _T("DragOverRejectsThisSpot"),       &Test_DragOverRejectsThisSpot       },
+        { _T("LegacyFilesCallbackStillWorks"), &Test_LegacyFilesCallbackStillWorks },
+        { _T("FilesAtPointWinsOverLegacy"),    &Test_FilesAtPointWinsOverLegacy    },
+        { _T("UnsupportedFormatRejected"),     &Test_UnsupportedFormatRejected     },
+        { _T("ClientPointFromScreenNullHwnd"), &Test_ClientPointFromScreenNullHwnd },
+        { _T("ClientPointFromScreenRealHwnd"), &Test_ClientPointFromScreenRealHwnd },
+        { _T("SetDragCallbacksBeforeRegister"),&Test_SetDragCallbacksBeforeRegister},
     };
 
     CString out;

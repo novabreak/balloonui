@@ -241,6 +241,78 @@ static Result Test_EmptyRange()
     return OK(_T("EmptyRange"));
 }
 
+// ---------------------------------------------------------------------
+// Mouse-wheel consumption contract (see DuiHost::DispatchMouseWheel).
+//
+//   * no scrollable range at all (max <= min) -> return false so the
+//     wheel keeps bubbling to an outer scroll container;
+//   * scrollable range exists but pos is already at the edge -> return
+//     true (consume), matching native Win32 controls.
+//
+// The three tests below pin both halves down.
+// ---------------------------------------------------------------------
+
+// Empty range: the bar cannot scroll, so it must not swallow the wheel.
+static Result Test_WheelEmptyRangeNotConsumed()
+{
+    DuiScrollBar sb;
+    sb.SetRect(RECT{ 0, 0, 12, 200 });
+    sb.SetRange(0, 0);          // nothing to scroll
+    sb.SetPage(200);
+    sb.SetLineSize(16);
+    bool handled = sb.OnMouseWheel(POINT{ 6, 100 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)handled, 0, _T("WheelEmptyRange/notConsumed"));
+    EXPECT_INT(sb.GetPos(), 0,  _T("WheelEmptyRange/posUnchanged"));
+    return OK(_T("WheelEmptyRangeNotConsumed"));
+}
+
+// Scrollable range that is already at its edge: still consumed. Users
+// habitually over-scroll past the end, and letting the page jump instead
+// is more disorienting than simply not moving.
+static Result Test_WheelAtEdgeStillConsumed()
+{
+    DuiScrollBar sb;
+    sb.SetRect(RECT{ 0, 0, 12, 200 });
+    sb.SetRange(0, 800);
+    sb.SetPage(200);
+    sb.SetLineSize(16);
+
+    sb.SetPos(800);             // already at the bottom
+    bool downAtBottom = sb.OnMouseWheel(POINT{ 6, 100 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)downAtBottom, 1, _T("WheelAtEdge/downAtBottom"));
+    EXPECT_INT(sb.GetPos(), 800,    _T("WheelAtEdge/bottomPosUnchanged"));
+
+    sb.SetPos(0);               // already at the top
+    bool upAtTop = sb.OnMouseWheel(POINT{ 6, 100 }, WHEEL_DELTA, 0);
+    EXPECT_INT((int)upAtTop, 1, _T("WheelAtEdge/upAtTop"));
+    EXPECT_INT(sb.GetPos(), 0,  _T("WheelAtEdge/topPosUnchanged"));
+    return OK(_T("WheelAtEdgeStillConsumed"));
+}
+
+// Same contract seen through DuiScrollView, the way callers meet it:
+// content shorter than the viewport leaves the inner bar with an empty
+// range, so a nested view must let the wheel through to its parent.
+static Result Test_ScrollViewWheelPassThroughWhenContentFits()
+{
+    DuiScrollView sv;
+    sv.SetContentHeight(80);                       // shorter than the viewport
+    sv.Layout(RECT{ 0, 0, 300, 200 });
+    EXPECT_INT(sv.GetScrollBar()->GetMax(), 0, _T("ScrollViewFits/emptyRange"));
+    bool handled = sv.OnMouseWheel(POINT{ 100, 100 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)handled, 0, _T("ScrollViewFits/notConsumed"));
+
+    // And the overflowing case still consumes, edge included.
+    DuiScrollView tall;
+    tall.SetContentHeight(1000);
+    tall.Layout(RECT{ 0, 0, 300, 200 });
+    bool tallHandled = tall.OnMouseWheel(POINT{ 100, 100 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)tallHandled, 1, _T("ScrollViewOverflow/consumed"));
+    tall.SetScrollPos(tall.GetScrollBar()->GetMax());
+    bool atBottom = tall.OnMouseWheel(POINT{ 100, 100 }, -WHEEL_DELTA, 0);
+    EXPECT_INT((int)atBottom, 1, _T("ScrollViewOverflow/consumedAtBottom"));
+    return OK(_T("ScrollViewWheelPassThroughWhenContentFits"));
+}
+
 // Horizontal: same math, X-axis instead of Y.
 static Result Test_Horizontal()
 {
@@ -278,6 +350,10 @@ CString RunAll()
         { _T("MouseWheel"),           &Test_MouseWheel           },
         { _T("OnScrollCallback"),     &Test_OnScrollCallback     },
         { _T("EmptyRange"),           &Test_EmptyRange           },
+        { _T("WheelEmptyRangeNotConsumed"), &Test_WheelEmptyRangeNotConsumed },
+        { _T("WheelAtEdgeStillConsumed"),   &Test_WheelAtEdgeStillConsumed   },
+        { _T("ScrollViewWheelPassThroughWhenContentFits"),
+                                      &Test_ScrollViewWheelPassThroughWhenContentFits },
         { _T("Horizontal"),           &Test_Horizontal           }
     };
 

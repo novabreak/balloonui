@@ -260,9 +260,9 @@ void DuiGifControl::Start()
     m_running = true;
     m_startMs = ::GetTickCount();
 
-    // Park a tick anim; DuiAnimMgr drives it ~60Hz when its TickAll is
-    // called. The DuiGallery harness calls TickAll from a timer on the
-    // gallery frame.
+    // Park a tick anim. DuiAnimMgr owns a shared ~60Hz pulse timer that it
+    // installs as soon as an anim is added and drops again once the last
+    // one finishes, so no host code has to call TickAll for playback.
     auto a = std::unique_ptr<GifTickAnim>(new GifTickAnim(this));
     DuiAnimMgr::Inst().Add(std::move(a));
 }

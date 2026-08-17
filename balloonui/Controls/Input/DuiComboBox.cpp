@@ -41,50 +41,149 @@ const int kArrowPadRPx  = 8;    // gap between arrow and right border
 const int kTextPadLPx   = 8;    // text indent past left border (read-only)
 const int kTextArrowGap = 4;    // min gap between text right edge and arrow
 
+// 取一块屏幕矩形所在显示器的工作区（已排除任务栏，多显示器安全）。
+// 取不到显示器信息时退回主显示器的工作区，再取不到就给一个常见分辨率兜底。
+RECT WorkAreaOfRect(const RECT& anchorScreen)
+{
+    HMONITOR mon = ::MonitorFromRect(&anchorScreen, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi;
+    ::memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (mon != NULL && ::GetMonitorInfo(mon, &mi))
+    {
+        return mi.rcWork;
+    }
+
+    RECT work;
+    if (::SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0))
+    {
+        return work;
+    }
+
+    RECT fallback = { 0, 0, 1920, 1080 };
+    return fallback;
+}
+
 } // namespace
 
+namespace combopopup {
+
+RECT ClampPopupToWorkArea(const RECT& comboScreen, int popupW, int popupH,
+                          int itemH, const RECT& work)
+{
+    // 下拉框上方 / 下方各自的可用高度。
+    const int spaceBelow = work.bottom - comboScreen.bottom;
+    const int spaceAbove = comboScreen.top - work.top;
+
+    int top = 0;
+    if (popupH <= spaceBelow)
+    {
+        // 常规情形：正下方装得下。
+        top = comboScreen.bottom;
+    }
+    else if (popupH <= spaceAbove)
+    {
+        // 下方不够、上方够 —— 翻到下拉框上方展开。
+        top = comboScreen.top - popupH;
+    }
+    else
+    {
+        // 上下都不够：挑空间大的那侧，并把高度压到该侧能容纳的整行数。
+        const int space = (spaceBelow >= spaceAbove) ? spaceBelow : spaceAbove;
+        int fitRows = (space - kPopupBorderThickness) / ((itemH > 0) ? itemH : 1);
+        if (fitRows < kPopupMinRows)
+        {
+            fitRows = kPopupMinRows;
+        }
+        popupH = fitRows * itemH + kPopupBorderThickness;
+
+        top = (spaceBelow >= spaceAbove) ? comboScreen.bottom
+                                         : (comboScreen.top - popupH);
+    }
+
+    // 竖直方向再兜一次底：上面按"压到可用空间"算过之后仍越界（例如工作区比
+    // 一行还矮）时，直接贴住工作区边缘，保证浮层左上角始终落在桌面内。
+    if (top + popupH > work.bottom)
+    {
+        top = work.bottom - popupH;
+    }
+    if (top < work.top)
+    {
+        top = work.top;
+    }
+
+    // 水平方向：默认与下拉框左对齐，右侧越界就往左挪，挪到左边界为止。
+    int left = comboScreen.left;
+    if (left + popupW > work.right)
+    {
+        left = work.right - popupW;
+    }
+    if (left < work.left)
+    {
+        left = work.left;
+    }
+
+    RECT rc;
+    rc.left   = left;
+    rc.top    = top;
+    rc.right  = left + popupW;
+    rc.bottom = top + popupH;
+    return rc;
+}
+
+} // namespace combopopup
+
 // ---------------------------------------------------------------------------
-// DuiComboEdit: the embedded EDIT child used by editable-mode combo. Routes
-// EN_CHANGE to the owning combo and suppresses the would-be VALUECHANGED
-// bubble from the EDIT's own ctrlId, so callers see exactly one
-// VALUECHANGED notification per change (on the combo's ctrlId).
+// DuiComboEdit —— 可编辑风格的下拉框内嵌的那个输入框。
+//
+// 它把内部的文字变化转交给宿主下拉框，由下拉框按<u>自己的</u>控件编号对外上报，
+// 从而保证宿主窗口对一次改动只收到一条通知。
+//
+// 「对外只发一份通知」这个契约由两件事共同保证：一是本类把文字变化转成对下拉框
+// 的内部回调，二是下拉框在创建本控件时调 SetNotificationsSuppressed(true)，把本
+// 控件对外发出的通知整体关闭。后者无法由本类的覆写代劳 —— 无窗口输入框的通知
+// 是直接送到宿主窗口的，不沿控件树逐级上传，外层控件无从拦截，只能在内嵌的这一
+// 个控件上从源头关闭。该开关不影响下面这些内部钩子，下拉框照常能感知输入框内部
+// 的变化。
 // ---------------------------------------------------------------------------
 class DuiComboEdit : public DuiEditHost
 {
 public:
+    // 记下宿主下拉框，供下面的内部钩子回调。
+    //   c：宿主下拉框指针；所有权不在本控件。本控件是它的子控件，生存期短于它，
+    //      因此不必考虑该指针失效。
     void SetCombo(DuiComboBox* c) { m_combo = c; }
 
-    // Override to redirect notifications to the combo instead of bubbling
-    // them as the embedded EDIT.
-    void OnHwndCommand(UINT enCode) override
+    // 取得焦点。焦点标志位、文本光标的激活与重绘全部由基类完成 —— 无窗口实现
+    // 下 DUI 层的标志位就是唯一的一份，不存在无窗口化之前「真正的焦点在内部子
+    // 窗口上、DUI 层的标志位无人更新」的问题，因此这里不再手工设置。
+    //   返回：基类的处理结果（不消费该事件）。
+    bool OnSetFocus() override
     {
-        switch (enCode)
+        return DuiEditHost::OnSetFocus();
+    }
+
+    // 失去焦点，理由同 OnSetFocus。
+    //   返回：基类的处理结果（不消费该事件）。
+    bool OnKillFocus() override
+    {
+        return DuiEditHost::OnKillFocus();
+    }
+
+protected:
+    // 文本内容发生变化。用户输入与程序调用 SetText 都会走到这里，这一点与无
+    // 窗口化之前由系统转发文字变化通知的行为一致。
+    void OnTextChanged() override
+    {
+        DuiEditHost::OnTextChanged();
+        if (m_combo != nullptr)
         {
-        case EN_CHANGE:
-            RefreshCacheFromHwnd();
-            Invalidate();
-            if (m_combo)
-            {
-                m_combo->OnEditTextChanged();
-            }
-            break;
-        case EN_SETFOCUS:
-            Test_SetFocused(true);
-            Invalidate();
-            // Intentionally NOT calling NotifyParent: the combo decides
-            // when (if ever) to bubble focus events on its own ctrlId.
-            break;
-        case EN_KILLFOCUS:
-            Test_SetFocused(false);
-            Invalidate();
-            break;
-        default:
-            break;
+            m_combo->OnEditTextChanged();
         }
     }
 
 private:
-    DuiComboBox* m_combo = nullptr;
+    DuiComboBox* m_combo = nullptr;    // 宿主下拉框；本控件不持有其所有权
 };
 
 // =====================================================================
@@ -105,11 +204,13 @@ public:
         MSG_WM_DESTROY(OnDestroy)
         MSG_WM_KILLFOCUS(OnKillFocus)
         MSG_WM_ACTIVATE(OnActivate)
+        MSG_WM_MOUSEWHEEL(OnMouseWheel)
         MESSAGE_HANDLER_EX(WM_DUI_NOTIFY, OnDuiNotify)
     END_MSG_MAP()
 
     void Open(DuiComboBox* owner, const RECT& screenRc,
-              const std::vector<CString>& items, int curSel, int itemH);
+              const std::vector<CString>& items, int curSel, int itemH,
+              bool showItemDelete);
 
     // Standard WTL hook: runs after WM_NCDESTROY, never inside one of our
     // own message handlers, so 'delete this' is safe here.
@@ -131,6 +232,7 @@ private:
     void    OnDestroy();
     void    OnKillFocus(CWindow);
     void    OnActivate(UINT nState, BOOL bMin, CWindow other);
+    BOOL    OnMouseWheel(UINT mkFlags, short zDelta, CPoint pt);
     LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam);
 
     // Defer destruction: PostMessage(WM_CLOSE) is dispatched AFTER our
@@ -154,7 +256,8 @@ private:
 };
 
 void DuiComboBoxPopup::Open(DuiComboBox* owner, const RECT& screenRc,
-                            const std::vector<CString>& items, int curSel, int itemH)
+                            const std::vector<CString>& items, int curSel, int itemH,
+                            bool showItemDelete)
 {
     m_owner = owner;
     Create(NULL, (RECT*)&screenRc, NULL, WS_POPUP | WS_BORDER, WS_EX_TOOLWINDOW | WS_EX_TOPMOST);
@@ -176,6 +279,9 @@ void DuiComboBoxPopup::Open(DuiComboBox* owner, const RECT& screenRc,
     auto lb = std::unique_ptr<DuiListBox>(new DuiListBox());
     lb->SetCtrlId(1);
     lb->SetItemHeight(itemH);
+    // 每行右侧的删除叉由 combo 决定开不开；关着时 DuiListBox 的绘制与命中
+    // 与从前完全一致。
+    lb->SetShowItemDelete(showItemDelete);
     for (size_t i = 0; i < items.size(); ++i)
     {
         lb->AddItem(items[i], (LPARAM)i);
@@ -217,6 +323,25 @@ void DuiComboBoxPopup::OnKillFocus(CWindow)
     RequestClose();
 }
 
+BOOL DuiComboBoxPopup::OnMouseWheel(UINT mkFlags, short zDelta, CPoint pt)
+{
+    // 滚轮消息由系统发给<u>焦点窗口</u>，而 Open 时焦点设在本浮层窗口上、不是内部
+    // 那个 DuiHost 子窗口，所以不转发的话滚轮会一路走到 DefWindowProc 里没下文 ——
+    // 表现就是项数超过 m_maxVisible 时，露不出来的那些项彻底够不着。
+    //
+    // 原样转发给 m_host：DuiHost::OnMouseWheel 按鼠标位置命中滚动容器（不走 focus），
+    // 里面的 DuiListBox 自带滚动条，接上就能滚。lParam 本就是屏幕坐标，DuiHost 会
+    // 自己 ScreenToClient，这里不必换算。
+    if (m_host.IsWindow())
+    {
+        return (BOOL)::SendMessage(m_host.m_hWnd, WM_MOUSEWHEEL,
+                                   MAKEWPARAM(mkFlags, zDelta),
+                                   MAKELPARAM(pt.x, pt.y));
+    }
+    SetMsgHandled(FALSE);
+    return FALSE;
+}
+
 LRESULT DuiComboBoxPopup::OnDuiNotify(UINT, WPARAM, LPARAM lParam)
 {
     DuiNotify* n = reinterpret_cast<DuiNotify*>(lParam);
@@ -231,6 +356,14 @@ LRESULT DuiComboBoxPopup::OnDuiNotify(UINT, WPARAM, LPARAM lParam)
         // here would re-enter our own KillFocus / Activate handlers and,
         // via OnFinalMessage delete-self, leave 'this' dangling on return.
         m_owner->OnPopupSelected((int)n->extra);
+        RequestClose();
+    }
+    else if (n->code == (UINT)DuiListBox::DUITN_ITEMDELETE && m_owner)
+    {
+        // 点了某行的删除叉。先把通知冒给 combo 的宿主（业务侧多半要弹二次确认），
+        // 再收掉浮层 —— 与选中那一支同样的理由：不能在本 handler 里同步销毁自己。
+        // 关浮层放在通知之后，业务侧才好在确认框里安心地改 combo 的 items。
+        m_owner->OnPopupItemDelete((int)n->extra);
         RequestClose();
     }
     return 0;
@@ -363,24 +496,36 @@ void DuiComboBox::OpenPopup()
         return;
     }
 
-    // Compute popup rect in screen coordinates: just below the combo, full
-    // combo width, height = min(rows, maxVisible) * itemH + 2 (border).
-    POINT topLeft = { m_rcItem.left, m_rcItem.bottom };
-    ::ClientToScreen(hostHwnd, &topLeft);
+    // 浮层与下拉框同宽，默认贴在它正下方，高度 = min(项数, m_maxVisible) 行。
+    // 落点<u>必须</u>夹进锚点所在显示器的工作区：项数多时浮层可以很高，直接贴在
+    // 下方会掉出屏幕下缘，用户既看不见也够不着（与 DuiMenu 的落点约定同理）。
+    POINT ptTopLeft     = { m_rcItem.left,  m_rcItem.top };
+    POINT ptBottomRight = { m_rcItem.right, m_rcItem.bottom };
+    ::ClientToScreen(hostHwnd, &ptTopLeft);
+    ::ClientToScreen(hostHwnd, &ptBottomRight);
+    RECT comboScreen;
+    comboScreen.left   = ptTopLeft.x;
+    comboScreen.top    = ptTopLeft.y;
+    comboScreen.right  = ptBottomRight.x;
+    comboScreen.bottom = ptBottomRight.y;
+
     int rows = (int)popupItems.size();
     if (rows > m_maxVisible)
     {
         rows = m_maxVisible;
     }
-    int popupW = m_rcItem.right - m_rcItem.left;
-    int popupH = rows * m_itemH + 2;
+    int popupW = comboScreen.right - comboScreen.left;
+    int popupH = rows * m_itemH + combopopup::kPopupBorderThickness;
+
+    const RECT rc = combopopup::ClampPopupToWorkArea(comboScreen, popupW, popupH,
+                                                     m_itemH,
+                                                     WorkAreaOfRect(comboScreen));
 
     // Heap-allocate; popup deletes itself in OnFinalMessage. We hold a
     // raw pointer for re-entry checks only - ownership is on the popup
     // itself once it's been Open()'d.
     m_popup = new DuiComboBoxPopup();
-    RECT rc = { topLeft.x, topLeft.y, topLeft.x + popupW, topLeft.y + popupH };
-    m_popup->Open(this, rc, popupItems, popupCurSel, m_itemH);
+    m_popup->Open(this, rc, popupItems, popupCurSel, m_itemH, m_showItemDelete);
     m_popupOpen = true;
 }
 
@@ -408,17 +553,35 @@ void DuiComboBox::ClosePopup()
     // Do NOT delete p here - OnFinalMessage already did (or will).
 }
 
+int DuiComboBox::MapPopupIndexWithFilter(int popupIndex,
+                                         const std::vector<int>& filteredIndices)
+{
+    // 过滤激活时，浮层里的下标是"第几个命中项"，要经映射表换回 m_items 的下标。
+    // 映射表为空（未过滤）时两者 1:1，原样返回。
+    if (!filteredIndices.empty()
+        && popupIndex >= 0 && popupIndex < (int)filteredIndices.size())
+    {
+        return filteredIndices[popupIndex];
+    }
+    return popupIndex;
+}
+
+int DuiComboBox::MapPopupIndexToItem(int popupIndex) const
+{
+    // 增量搜索没开时映射表不作数（可能是上一次留下的残留），直接按 1:1 处理。
+    if (!m_incSearch)
+    {
+        return popupIndex;
+    }
+    return MapPopupIndexWithFilter(popupIndex, m_filteredIndices);
+}
+
 void DuiComboBox::OnPopupSelected(int index)
 {
     // Translate popup-relative index back to the m_items index when an
     // incremental-search filter is active. Without filter, the popup's
     // index already lines up 1:1 with m_items.
-    int realIdx = index;
-    if (m_incSearch && !m_filteredIndices.empty()
-        && index >= 0 && index < (int)m_filteredIndices.size())
-    {
-        realIdx = m_filteredIndices[index];
-    }
+    int realIdx = MapPopupIndexToItem(index);
     SetCurSel(realIdx, /*notify=*/true);
     if (m_edit && realIdx >= 0 && realIdx < (int)m_items.size())
     {
@@ -467,7 +630,7 @@ bool DuiComboBox::OnLButtonUp(POINT pt, UINT)
     return true;
 }
 
-void DuiComboBox::OnPaint(HDC hdc, const RECT& /*rcDirty*/)
+void DuiComboBox::OnPaint(HDC hdc, const RECT& rcDirty)
 {
     if (!m_bVisible)
     {
@@ -501,6 +664,18 @@ void DuiComboBox::OnPaint(HDC hdc, const RECT& /*rcDirty*/)
     ::SelectObject(hdc, op);
     ::DeleteObject(br);
     ::DeleteObject(pn);
+
+    // 绘制子控件 —— 可编辑风格下的内嵌输入框就是在这一步画出来的。
+    //
+    // 输入框无窗口化之前是一个真正的 Win32 子窗口，它的像素由系统在整个界面
+    // 之上补齐，本方法不画它也照样看得见；无窗口实现完全依赖这一遍绘制，少了
+    // 这一步用户看到的就只是一个空白圆角框加一个下拉箭头。
+    //
+    // 必须排在上面填充底色之后：底色铺满整个控件矩形，先画输入框会被它整个盖掉。
+    // 下面的箭头与只读风格的文字则可以排在后面 —— 内嵌输入框的矩形已经把右侧
+    // 箭头区让出来了（见 EditZoneRect），两者不重叠；只读风格下没有子控件，
+    // 本次调用直接返回。
+    DuiControl::OnPaint(hdc, rcDirty);
 
     // Down arrow on the right side.
     int arrowW = kArrowWPx;
@@ -574,11 +749,9 @@ void DuiComboBox::SetBgColor(COLORREF c)
 
 void DuiComboBox::SetShowBorder(bool b)
 {
+    // 只控制下拉框主体那一圈边框。内嵌输入框的边框始终关闭，理由见
+    // EnsureEditChild 里的说明：两圈边框会在圆角框内侧多出一个方框。
     m_showBorder = b;
-    if (m_edit)
-    {
-        m_edit->SetShowBorder(b);
-    }
     Invalidate();
 }
 
@@ -586,6 +759,42 @@ void DuiComboBox::SetShowArrow(bool b)
 {
     m_showArrow = b;
     Invalidate();
+}
+
+void DuiComboBox::SetShowItemDelete(bool b)
+{
+    if (m_showItemDelete == b)
+    {
+        return;
+    }
+    m_showItemDelete = b;
+    // 只影响下次打开的浮层；已经开着的那个不动它 —— 开关一般在建控件时设一次，
+    // 为这种边角情形去重建浮层不值当。
+}
+
+void DuiComboBox::OnPopupItemDelete(int index)
+{
+    // 与 OnPopupSelected 同理：增量搜索过滤激活时，浮层里的下标是过滤后的序号，
+    // 必须映射回 m_items 的真实下标再上报 —— 否则宿主按这个序号去删，删掉的是
+    // 另一个人（用户敲了几个字过滤之后点删除叉，最容易撞上）。
+    const int realIdx = MapPopupIndexToItem(index);
+    if (realIdx < 0 || realIdx >= (int)m_items.size())
+    {
+        return;
+    }
+
+    // 过滤到此结束（浮层随即关闭），与 OnPopupSelected 一样把映射表清掉，
+    // 免得下次手动打开浮层时还停在上一次的过滤结果上。
+    m_filteredIndices.clear();
+
+    // 只上报，不删自己的 items：删不删、还要连带删掉什么，由宿主决定。
+    //
+    // 注意宿主收到这条通知后<u>不能</u>在它的 handler 里同步弹模态对话框：
+    // 本调用还在浮层窗口的消息处理栈里，模态对话框会泵消息，浮层的
+    // KillFocus / Activate 随即触发自我销毁，等模态框返回时浮层对象已经没了，
+    // 栈回到 DuiComboBoxPopup::OnDuiNotify 就是在访问野指针。宿主应当
+    // PostMessage 给自己，把确认框推迟到消息栈完全展开之后再弹。
+    NotifyParent((UINT)DUICBN_ITEMDELETE, (LPARAM)realIdx);
 }
 
 void DuiComboBox::SetArrowColor(COLORREF c)
@@ -752,9 +961,20 @@ void DuiComboBox::EnsureEditChild()
         auto e = std::unique_ptr<DuiComboEdit>(new DuiComboEdit());
         e->SetCombo(this);
         e->SetCtrlId(GetCtrlId() + 0x1000);   // sub-id offset; not used by parent
-        // Keep the embedded EDIT visually consistent with the combo body.
+        // 关闭内嵌输入框对外发出的全部通知：宿主窗口对一次改动只应当收到一条
+        // 通知，且携带的是下拉框自己的控件编号。无窗口输入框的通知直接送到宿主
+        // 窗口、不沿控件树逐级上传，外层控件无从拦截，只能在这里从源头关闭。
+        // 该开关不影响 DuiComboEdit 的内部钩子，本控件照常能感知输入框的变化。
+        e->SetNotificationsSuppressed(true);
+        // 底色与下拉框主体保持一致。
         e->SetBgColor(m_bgColor);
-        e->SetShowBorder(m_showBorder);
+        // 内嵌的输入框一律不画自己的边框：下拉框主体已经画了一圈圆角边框，
+        // 输入框再画一圈直角边框，就会在圆角框内侧多出一个方框。
+        //
+        // 无窗口化之前看不到这个问题，是因为当时下拉框根本不绘制子控件（输入
+        // 框的像素由它自己的子窗口画在界面之上）。现在补上了子控件绘制，这一圈
+        // 边框才会显现出来。
+        e->SetShowBorder(false);
         m_edit = e.get();
         DuiControl::AddChild(std::unique_ptr<DuiControl>(e.release()));
     }
@@ -772,16 +992,10 @@ void DuiComboBox::PositionEditChild()
     {
         return;
     }
+    // 无窗口输入框构造完就能用，不存在「尚未创建」这个状态，摆好矩形即可。
+    // 无窗口化之前这里还要等宿主窗口就绪后再把内部子窗口创建出来，并因此补一次
+    // 布局；那一步连同它依赖的窗口句柄查询一并去掉了。
     m_edit->SetRect(EditZoneRect());
-
-    // Lazily create the underlying EDIT HWND once we know the host's HWND.
-    if (m_pHost && m_pHost->m_hWnd && !m_edit->GetHostedHwnd())
-    {
-        m_edit->EnsureCreated(m_pHost->m_hWnd);
-        // After EnsureCreated, push the rect again so the new HWND
-        // adopts the right position immediately.
-        m_edit->Layout(m_edit->GetRect());
-    }
 }
 
 void DuiComboBox::Layout(const RECT& rcAvail)

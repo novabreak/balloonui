@@ -9,6 +9,9 @@
 #include "../Controls/Layout/DuiLayout.h"
 #include "../Controls/Basic/DuiButton.h"
 #include "../Controls/Basic/DuiLabel.h"
+#if BUI_FEATURE_RICHTEXT
+#include "../Controls/Input/DuiRichEdit.h"
+#endif
 
 namespace balloonwjui {
 
@@ -439,6 +442,159 @@ static Result Test_CustomFactoryNullSkips()
     return OK(_T("CustomFactoryNullSkips"));
 }
 
+#if BUI_FEATURE_RICHTEXT
+
+// ----- <richtext>（无窗口富文本控件）---------------------------------
+//
+// 这一组验的是「XML 属性有没有真的落到控件上」。标签名与 <richedit> 只差
+// 两个字母，属性名又大半同名，写混了不会报错、只会建出另一个控件，所以
+// 第一条用例先钉住建出来的确实是 DuiRichEdit。
+
+// 与 <richedit> 同名的那批基本属性。
+static Result Test_BuildRichTextBasicAttrs()
+{
+    auto root = DuiXmlBuilder::FromString(
+        "<richtext id=\"77\" text=\"hello\" placeholder=\"type here\" "
+        "read-only=\"true\" multi-line=\"true\" word-wrap=\"false\" "
+        //颜色属性的格式是逗号分隔的三个十进制分量，不是 #RRGGBB ——
+        //库内 ParseColor 只认前者，认不出时静默退回默认值。
+        "max-length=\"140\" text-color=\"255,0,0\" bg-color=\"0,255,0\"/>");
+    EXPECT_TRUE(root.get() != nullptr, _T("BRT/built"));
+
+    DuiRichEdit* rt = dynamic_cast<DuiRichEdit*>(root.get());
+    EXPECT_TRUE(rt != nullptr, _T("BRT/isRichEdit"));
+    if (rt == nullptr)
+    {
+        return Fail(_T("BRT/isRichEdit"), _T("tag did not build a DuiRichEdit"));
+    }
+
+    EXPECT_INT((int)rt->GetCtrlId(), 77, _T("BRT/id"));
+    EXPECT_STR(rt->GetText(), _T("hello"), _T("BRT/text"));
+    EXPECT_STR(rt->GetPlaceholder(), _T("type here"), _T("BRT/placeholder"));
+    EXPECT_TRUE(rt->IsReadOnly(), _T("BRT/readOnly"));
+    EXPECT_TRUE(rt->IsMultiLine(), _T("BRT/multiLine"));
+    EXPECT_TRUE(!rt->IsWordWrap(), _T("BRT/wordWrapOff"));
+    EXPECT_INT(rt->GetMaxLength(), 140, _T("BRT/maxLength"));
+    EXPECT_INT((int)rt->GetTextColor(), (int)RGB(255, 0, 0), _T("BRT/textColor"));
+    EXPECT_INT((int)rt->GetBackgroundColor(), (int)RGB(0, 255, 0), _T("BRT/bgColor"));
+    return OK(_T("BuildRichTextBasicAttrs"));
+}
+
+// 本控件独有的那批属性：边框、可聚焦、拖放、右键菜单、两个方向的滚动条策略。
+static Result Test_BuildRichTextOwnAttrs()
+{
+    auto root = DuiXmlBuilder::FromString(
+        "<richtext show-border=\"false\" focusable=\"false\" "
+        "drag-drop=\"false\" context-menu=\"false\" "
+        "v-scroll=\"always\" h-scroll=\"never\"/>");
+    DuiRichEdit* rt = dynamic_cast<DuiRichEdit*>(root.get());
+    EXPECT_TRUE(rt != nullptr, _T("BRTOwn/isRichEdit"));
+    if (rt == nullptr)
+    {
+        return Fail(_T("BRTOwn/isRichEdit"), _T("tag did not build a DuiRichEdit"));
+    }
+
+    EXPECT_TRUE(!rt->IsShowBorder(), _T("BRTOwn/noBorder"));
+    EXPECT_TRUE(!rt->IsFocusable(), _T("BRTOwn/notFocusable"));
+    EXPECT_TRUE(!rt->IsDragDropEnabled(), _T("BRTOwn/noDragDrop"));
+    EXPECT_TRUE(!rt->IsContextMenuEnabled(), _T("BRTOwn/noContextMenu"));
+    EXPECT_INT((int)rt->GetVScrollPolicy(), (int)DuiRichEdit::kScrollBarAlways,
+               _T("BRTOwn/vScrollAlways"));
+    EXPECT_INT((int)rt->GetHScrollPolicy(), (int)DuiRichEdit::kScrollBarNever,
+               _T("BRTOwn/hScrollNever"));
+    return OK(_T("BuildRichTextOwnAttrs"));
+}
+
+// 自动增高：像素版上下限。
+static Result Test_BuildRichTextAutoGrowPixels()
+{
+    auto root = DuiXmlBuilder::FromString(
+        "<richtext auto-grow=\"true\" auto-grow-min=\"30\" auto-grow-max=\"120\"/>");
+    DuiRichEdit* rt = dynamic_cast<DuiRichEdit*>(root.get());
+    EXPECT_TRUE(rt != nullptr, _T("BRTGrow/isRichEdit"));
+    if (rt == nullptr)
+    {
+        return Fail(_T("BRTGrow/isRichEdit"), _T("tag did not build a DuiRichEdit"));
+    }
+
+    EXPECT_TRUE(rt->IsAutoGrow(), _T("BRTGrow/on"));
+    EXPECT_INT(rt->GetAutoGrowMin(), 30,  _T("BRTGrow/min"));
+    EXPECT_INT(rt->GetAutoGrowMax(), 120, _T("BRTGrow/max"));
+
+    // 关掉的写法也要生效。
+    auto rootOff = DuiXmlBuilder::FromString("<richtext auto-grow=\"false\"/>");
+    DuiRichEdit* rtOff = dynamic_cast<DuiRichEdit*>(rootOff.get());
+    EXPECT_TRUE(rtOff != nullptr, _T("BRTGrow/offBuilt"));
+    if (rtOff != nullptr)
+    {
+        EXPECT_TRUE(!rtOff->IsAutoGrow(), _T("BRTGrow/off"));
+    }
+    return OK(_T("BuildRichTextAutoGrowPixels"));
+}
+
+// 自动增高：行数版换算成像素，且写在像素版之后时以行数版为准。
+//
+// 两种写法改的是同一对成员，处理顺序决定谁生效。这条用例钉住的就是那个
+// 顺序 —— 顺序写反的话，同时写了两种属性时会以像素版为准，与文档不符。
+static Result Test_BuildRichTextAutoGrowLinesWins()
+{
+    auto root = DuiXmlBuilder::FromString(
+        "<richtext auto-grow-min=\"30\" auto-grow-max=\"120\" "
+        "auto-grow-lines=\"1,5\"/>");
+    DuiRichEdit* rt = dynamic_cast<DuiRichEdit*>(root.get());
+    EXPECT_TRUE(rt != nullptr, _T("BRTLines/isRichEdit"));
+    if (rt == nullptr)
+    {
+        return Fail(_T("BRTLines/isRichEdit"), _T("tag did not build a DuiRichEdit"));
+    }
+
+    // 行数换算用的是当前默认字体的行高，具体像素值与字体有关，所以不断言
+    // 绝对值，只断言「确实是按行高换算出来的」以及「覆盖掉了像素版的值」。
+    const int nLineH = rt->GetLineHeight();
+    EXPECT_TRUE(nLineH > 0, _T("BRTLines/lineHeightPositive"));
+    EXPECT_INT(rt->GetAutoGrowMin(), nLineH,     _T("BRTLines/minIsOneLine"));
+    EXPECT_INT(rt->GetAutoGrowMax(), nLineH * 5, _T("BRTLines/maxIsFiveLines"));
+    return OK(_T("BuildRichTextAutoGrowLinesWins"));
+}
+
+// 不写任何属性时，控件保持自己的默认值 —— 解析过程不能顺手改掉什么。
+//
+// 这条防的是「属性缺省时误把空串当成 false / 0 设进去」这类错误：那种错误
+// 在写了属性的用例里看不出来，只有不写属性时才暴露。
+static Result Test_BuildRichTextDefaultsUntouched()
+{
+    auto root = DuiXmlBuilder::FromString("<richtext/>");
+    DuiRichEdit* rt = dynamic_cast<DuiRichEdit*>(root.get());
+    EXPECT_TRUE(rt != nullptr, _T("BRTDef/isRichEdit"));
+    if (rt == nullptr)
+    {
+        return Fail(_T("BRTDef/isRichEdit"), _T("tag did not build a DuiRichEdit"));
+    }
+
+    // 与控件自身的默认值逐项对照。
+    DuiRichEdit reference;
+    EXPECT_INT(rt->IsReadOnly() ? 1 : 0, reference.IsReadOnly() ? 1 : 0,
+               _T("BRTDef/readOnly"));
+    EXPECT_INT(rt->IsMultiLine() ? 1 : 0, reference.IsMultiLine() ? 1 : 0,
+               _T("BRTDef/multiLine"));
+    EXPECT_INT(rt->IsWordWrap() ? 1 : 0, reference.IsWordWrap() ? 1 : 0,
+               _T("BRTDef/wordWrap"));
+    EXPECT_INT(rt->IsShowBorder() ? 1 : 0, reference.IsShowBorder() ? 1 : 0,
+               _T("BRTDef/showBorder"));
+    EXPECT_INT(rt->IsFocusable() ? 1 : 0, reference.IsFocusable() ? 1 : 0,
+               _T("BRTDef/focusable"));
+    EXPECT_INT(rt->IsAutoGrow() ? 1 : 0, reference.IsAutoGrow() ? 1 : 0,
+               _T("BRTDef/autoGrow"));
+    EXPECT_INT(rt->IsContextMenuEnabled() ? 1 : 0,
+               reference.IsContextMenuEnabled() ? 1 : 0, _T("BRTDef/contextMenu"));
+    EXPECT_INT(rt->GetMaxLength(), reference.GetMaxLength(), _T("BRTDef/maxLength"));
+    EXPECT_INT((int)rt->GetVScrollPolicy(), (int)reference.GetVScrollPolicy(),
+               _T("BRTDef/vScroll"));
+    return OK(_T("BuildRichTextDefaultsUntouched"));
+}
+
+#endif // BUI_FEATURE_RICHTEXT
+
 #undef EXPECT_INT
 #undef EXPECT_TRUE
 #undef EXPECT_STR
@@ -466,6 +622,13 @@ CString RunAll()
         { _T("CustomFactoryNullSkips"),      &Test_CustomFactoryNullSkips      },
         { _T("PrologCommentWithGtChar"),     &Test_PrologCommentWithGtChar     },
         { _T("InlineCommentBetweenChildren"),&Test_InlineCommentBetweenChildren},
+#if BUI_FEATURE_RICHTEXT
+        { _T("BuildRichTextBasicAttrs"),     &Test_BuildRichTextBasicAttrs     },
+        { _T("BuildRichTextOwnAttrs"),       &Test_BuildRichTextOwnAttrs       },
+        { _T("BuildRichTextAutoGrowPixels"), &Test_BuildRichTextAutoGrowPixels },
+        { _T("BuildRichTextAutoGrowLinesWins"), &Test_BuildRichTextAutoGrowLinesWins },
+        { _T("BuildRichTextDefaultsUntouched"), &Test_BuildRichTextDefaultsUntouched },
+#endif
     };
 
     CString out;

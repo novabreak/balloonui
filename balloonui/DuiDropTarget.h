@@ -53,6 +53,26 @@ public:
     typedef std::function<void(const std::vector<CString>&)> FilesCallback;
     typedef std::function<void(HBITMAP)>                     BitmapCallback;
 
+    // 拖动过程中的三个可选回调（见下面 SetDragCallbacks）。一个都不设时，本类
+    // 的行为与只有 Drop 回调的旧版本完全一致。
+    //
+    //   DragEnterCallback：拖动进入本窗口时回调一次。
+    //     ptClient  落点在<u>本窗口客户区</u>的坐标（本类已把 OLE 给的屏幕坐标换算过）。
+    //     hasFiles  本次拖的数据里是否含文件列表（CF_HDROP）；false 表示只有位图（CF_BITMAP）。
+    //     返回值    false 表示本次拒收 —— 光标显示禁止符，且随后的 Drop 不再回调任何东西。
+    //   DragOverCallback：光标在本窗口内移动时持续回调，参数含义同上。返回 false 表示
+    //     <u>光标当前所在的位置</u>不能放（光标显示禁止符）—— 窗口内只有一块区域收
+    //     拖放时靠它逐帧改判，因为光标在同一个窗口内移动是<u>不会</u>再触发 DragEnter 的。
+    //   DragLeaveCallback：拖动离开本窗口时回调。<u>一次 Drop 完成之后也会回调它一次</u>，
+    //                      这样调用方收起悬停提示只需写在一个地方。
+    typedef std::function<bool(const POINT& ptClient, bool hasFiles)> DragEnterCallback;
+    typedef std::function<bool(const POINT& ptClient)>                DragOverCallback;
+    typedef std::function<void()>                                     DragLeaveCallback;
+
+    // 带落点坐标的文件回调（见下面 SetFilesAtPointCallback）。
+    typedef std::function<void(const std::vector<CString>&, const POINT& ptClient)>
+        FilesAtPointCallback;
+
     DuiDropTargetHelper();
     ~DuiDropTargetHelper();
 
@@ -67,9 +87,45 @@ public:
     // accept, but the data isn't interesting yet" testing).
     void  SetCallbacks(FilesCallback onFiles, BitmapCallback onBitmap);
 
+    /**
+     *  装拖动过程回调。三个参数都可为空（空的那个就不回调），全空等于没装。
+     *  Register 之前或之后调用皆可，但 <u>Unregister 会连同内部实现对象一起丢弃
+     *  已装的回调</u>，重新 Register 之前要重新装一遍。
+     *    onEnter：拖入时回调，返回 false 表示本次拒收；不装则一律按"能收"处理。
+     *    onOver： 拖动过程中光标移动时回调，返回 false 表示当前位置不能放；不装则
+     *             沿用 onEnter 的判定。
+     *    onLeave：拖离时回调；一次 Drop 完成后也会回调一次。
+     */
+    void  SetDragCallbacks(DragEnterCallback onEnter, DragOverCallback onOver,
+                           DragLeaveCallback onLeave);
+
+    /**
+     *  装带落点坐标的文件回调。装了它之后，落手时<u>只</u>回调它、不再回调
+     *  SetCallbacks 装的那个 FilesCallback（两者只触发其一，避免同一次拖放被处理
+     *  两遍）。位图回调不受影响。
+     *    onFilesAtPoint：回调，参数为文件路径列表与落点的客户区坐标；传空表示撤销。
+     */
+    void  SetFilesAtPointCallback(FilesAtPointCallback onFilesAtPoint);
+
+    /**
+     *  取内部的 IDropTarget 实现（没有就先建一个）。供需要自行驱动拖放流程的
+     *  高级用法与单元测试使用 —— 正常接入拖放只需 Register + 装回调，不必碰它。
+     *  @return 内部实现指针，<u>所有权仍属本类</u>：调用方不得在未 AddRef 的情况下
+     *          Release 它，也不要在本类析构或 Unregister 之后继续使用。
+     */
+    IDropTarget* GetDropTarget();
+
     // Pure helper: extract paths from an HDROP via DragQueryFile.
     // Returns the list of file paths. Side-effect free.
     static std::vector<CString> ExtractFilesFromHDrop(HDROP hDrop);
+
+    /**
+     *  把 OLE 拖放接口给的屏幕坐标换算成某窗口的客户区坐标。纯函数、无副作用。
+     *    hwnd：    目标窗口；为空或换算失败时原样返回屏幕坐标。
+     *    ptScreen：屏幕坐标（IDropTarget 各方法的 POINTL 参数）。
+     *  @return 客户区坐标。
+     */
+    static POINT ClientPointFromScreen(HWND hwnd, const POINTL& ptScreen);
 
 private:
     DuiDropTargetImpl* m_impl  = nullptr;

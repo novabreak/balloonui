@@ -273,6 +273,17 @@ public:
     // 清空所有 caption icons。
     void    ClearCaptionIcons();
 
+    // ---- 全屏 ----
+    //
+    // 在「窗口」与「全屏」间切换：全屏时隐藏标题栏、铺满按钮所在显示器（含任务栏区域）；
+    // 退出时恢复原标题栏高度与窗口位置 / 大小。常配 F11 切换、ESC 退出 —— 但那由宿主
+    // 窗口在自己的键盘消息里调用本接口，本类只负责切换本身、不拦截按键。
+    void    ToggleFullscreen();
+    // 退出全屏（已是窗口态则无操作）。
+    void    ExitFullscreen();
+    // 当前是否处于全屏态。
+    bool    IsFullscreen() const { return m_fullscreen; }
+
     // ---- 客户区 ----
 
     // 安装 / 替换客户区根控件。frame 内部已经预留了标题栏 slot，
@@ -396,6 +407,9 @@ private:
     COLORREF m_titleTextColor   = RGB(40, 40, 40);
     COLORREF m_captionGlyphOverride = CLR_INVALID;
     bool     m_isMaximized      = false;   // tracked from WM_SIZE; propagated to max button glyph
+    bool     m_fullscreen       = false;   // 是否处于全屏态（ToggleFullscreen 切换）
+    int      m_savedTitleH      = 36;      // 进全屏前的标题栏高，退出时恢复
+    WINDOWPLACEMENT m_savedPlacement = { sizeof(WINDOWPLACEMENT) };   // 进全屏前的窗口位置 / 大小
 };
 
 } // namespace balloonwjui

@@ -3,14 +3,14 @@
  *
  *  根据文本框当前状态（是否只读 / 有无选区 / 剪贴板有无文本 / 有无文本 /
  *  是否密码框）算出右键菜单该有哪些项、各项是否可用（灰显）。抽成无副作用
- *  的纯函数，是为了能脱离真 HWND 单元测试 —— DuiEditHost / DuiRichEditHost
- *  各自的 WM_CONTEXTMENU 子类过程在运行期读取自身状态后调用本函数，再据
- *  返回的模型构建 DuiMenu 弹出。
+ *  的纯函数，是为了能脱离真 HWND 单元测试 —— DuiEditHost 的 WM_CONTEXTMENU
+ *  子类过程在运行期读取自身状态后调用本函数，再据返回的模型构建 DuiMenu
+ *  弹出。
  *
  *  本文件刻意不依赖 DuiMenu、也不碰任何 Win32 资源，只产出"模型 + 文案"，
  *  让"算什么菜单"与"怎么弹菜单"彻底分开。
  *
- *  典型用法（见 DuiEditHost.cpp / DuiRichEditHost.cpp 的 ShowContextMenu）：
+ *  典型用法（见 DuiEditHost.cpp 的 ShowContextMenu）：
  *      EditContextState st;
  *      st.m_readOnly = ...;            // 从控件自身状态填
  *      st.m_hasSelection = ...;
@@ -26,7 +26,11 @@
 #pragma once
 
 #include "../../BalloonUiFeatures.h"
-#if defined(BUI_FEATURE_EDIT) || defined(BUI_FEATURE_RICHEDIT)
+// 只随 EDIT 一起裁剪。本文件早先还判过一个 BUI_FEATURE_RICHEDIT ——
+// 那是寄宿真子窗口的旧富文本控件的开关，该控件已整体删除；如今的无窗口
+// 富文本控件 DuiRichEdit 用的是另一份菜单模型 RichEditContextMenu.h，
+// 与本文件无关。
+#if defined(BUI_FEATURE_EDIT)
 
 #include <vector>
 
@@ -142,4 +146,4 @@ inline LPCTSTR EditContextCommandLabel(EditContextCommand cmd)
 
 } // namespace balloonwjui
 
-#endif // BUI_FEATURE_EDIT || BUI_FEATURE_RICHEDIT
+#endif // BUI_FEATURE_EDIT

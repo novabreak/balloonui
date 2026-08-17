@@ -49,7 +49,6 @@
 //                        （TREEVIEW 用 EditHost 做 inline 单元格编辑）
 //   DISABLE_LISTBOX    → 也关掉 COMBOBOX
 //   DISABLE_TAB        → 也关掉 TABPAGE
-//   DISABLE_IMAGEOLE   → 也关掉 RICHEDIT（RichEdit 用 ImageOle 嵌图片）
 //
 // 如果业务关掉一个有传染的 feature 但又显式开启一个被传染的下游
 // feature，本文件 #error 报错（避免静默编译出半残的库）。
@@ -61,7 +60,7 @@
 // 静态库工程：在 balloonui 子工程 + 业务 exe 工程<u>都</u>加预处理器
 // 定义（VS：项目属性 → C/C++ → 预处理器 → 预处理器定义），例如：
 //
-//     BUI_DISABLE_RICHEDIT;BUI_DISABLE_TREEVIEW;BUI_DISABLE_MENU
+//     BUI_DISABLE_RICHTEXT;BUI_DISABLE_TREEVIEW;BUI_DISABLE_MENU
 //
 // DLL 工程：在 balloonui 工程的预处理器定义里加同一份 list，重新编
 // DLL；同时业务 exe 也加同一份 list。运行期把新 DLL 替换原 DLL。
@@ -212,14 +211,17 @@
 
 
 // ---------------------------------------------------------------------
-// EDIT —— DuiEditHost（单 / 多行文本输入，HWND-hosted Win32 EDIT）
+// EDIT —— DuiEdit（单 / 多行文本输入，无窗口）
 // ---------------------------------------------------------------------
-// 作用：包了一个真的 Win32 EDIT 控件，给 IME / 中文输入正确支持。
-// 单行 / 多行 / 密码 / 占位符（placeholder）/ 只读。
-// 关闭后影响：DuiEditHost 类消失。XML <edit> 标签失效。<u>传染</u>：
-// SearchBox / SpinBox / ComboBox / TreeView 都依赖它，会被一起关掉。
-// 依赖：HwndHostControl（kernel）。
-// 典型场景：登录用户名 / 密码、搜索输入、聊天输入、表单字段。
+// 作用：普通文本输入框。单行 / 多行 / 密码 / 占位文字 / 只读 / 最大长度，
+// 外加左右内联图标栏、密码显隐按钮、单行文字垂直居中。
+// 关闭后影响：DuiEdit 与兼容外壳 DuiEditHost 一起消失，XML <edit> 标签
+// 失效。<u>传染</u>：SearchBox / SpinBox / ComboBox / TreeView 都依赖它，
+// 会被一起关掉。
+// 依赖：<u>RICHTEXT</u> —— 2026-08-17 起本控件改为无窗口实现，建在富文本
+// 控件 DuiRichEdit 之上（排版、光标、输入法、剪贴板都由它提供），因此关掉
+// RICHTEXT 就不能再开 EDIT。下面的依赖一致性检查会拦住这种组合。
+// 典型场景：登录用户名 / 密码、搜索输入、表单字段。
 #ifndef BUI_DISABLE_EDIT
 #  define BUI_FEATURE_EDIT 1
 #endif
@@ -231,7 +233,8 @@
 // 作用：RichEdit 控件能"插一张图片到光标位置"靠的就是 IRichEditOle +
 // IDataObject 的 OLE 流；DuiImageOle 把 PNG/JPG/GIF 文件包装成
 // IDataObject 喂给 RichEdit。
-// 关闭后影响：DuiImageOle 类消失。<u>传染</u>：RICHEDIT 也会被关掉。
+// 关闭后影响：DuiImageOle 类消失，富文本控件的内联图片能力随之关闭
+// （文字编辑本身不受影响）。
 // 依赖：无（用 OLE / RichEdit COM 接口，是 Windows 自带）。
 // 典型场景：聊天 RichEdit 输入框 / 显示框里的内联图片、emoji 图标
 // 显示。
@@ -241,17 +244,35 @@
 
 
 // ---------------------------------------------------------------------
-// RICHEDIT —— DuiRichEditHost（HWND-hosted Win32 RichEdit）
+// RICHEDIT —— 已移除
 // ---------------------------------------------------------------------
-// 作用：包了一个真的 Win32 RICHEDIT 控件；支持富文本（颜色 / 字体 /
-// 内嵌图片 / 自动 URL 检测）+ 多行 / word-wrap / 占位符。
-// 关闭后影响：DuiRichEditHost 类消失。XML <richedit> 标签失效。聊天
-// 输入框这类需要"图文混排 + IME"的场景做不了。
-// 依赖：IMAGEOLE（cpp 包含 DuiImageOle.h，用于 InsertImage 插图）+
-// HwndHostControl（kernel）。
-// 典型场景：聊天 输入框 / 历史显示、富文本编辑器、reading-pane。
-#if !defined(BUI_DISABLE_RICHEDIT) && defined(BUI_FEATURE_IMAGEOLE)
-#  define BUI_FEATURE_RICHEDIT 1
+// 库里原先有一个内嵌真 Win32 富文本子窗口的控件，开关名为 RICHEDIT。
+// 它已被无窗口的 RICHTEXT（见下一节）整体取代并删除，XML 标签也由
+// <richedit> 统一为 <richtext>。
+//
+// 这里刻意留一条报错而不是默默忽略：业务侧若还在预处理器定义里写着
+// BUI_DISABLE_RICHEDIT，那行定义已经不起任何作用 —— 静默失效比编译报错
+// 难查得多，尤其是「我明明关掉了，怎么体积没变」这类问题。
+#if defined(BUI_DISABLE_RICHEDIT)
+#  error "BUI_DISABLE_RICHEDIT is obsolete: the HWND-hosted rich edit control has been removed. Use BUI_DISABLE_RICHTEXT to strip the windowless DuiRichEdit instead."
+#endif
+
+
+// ---------------------------------------------------------------------
+// RICHTEXT —— DuiRichEdit（无窗口富文本控件）
+// ---------------------------------------------------------------------
+// 作用：库内唯一的富文本控件。它<u>没有自己的窗口</u> —— 文字由系统的
+// 排版引擎画在宿主的绘制目标上。因此它能被别的控件遮挡、能放进滚动容器
+// 与页签、能有圆角与半透明背景、能随内容自动增高，这些都是内嵌真子窗口
+// 的做法办不到的。
+// 关闭后影响：DuiRichEdit / DuiTextHost / DuiTextServices 三个类消失，
+// XML <richtext> 标签失效。库内将没有任何富文本能力。
+// 依赖：无硬依赖。滚动条与右键菜单都是可选的 —— 关掉 SCROLLBAR 只是
+// 没有可拖动的滑块（滚轮和键盘照常滚），关掉 MENU 只是没有右键菜单，
+// 两者都不影响编辑功能本身。
+// 典型场景：聊天输入框（自动增高）、公告正文、更新说明、富文本编辑器。
+#if !defined(BUI_DISABLE_RICHTEXT)
+#  define BUI_FEATURE_RICHTEXT 1
 #endif
 
 
@@ -526,18 +547,18 @@
 // 符号的引用导致编译错误。
 // 关闭后影响：DuiGalleryDlg / DuiGalleryAutoStart 整个跳过；DEBUG
 // 自动弹出的 gallery 测试窗也跟着消失。production 业务方面无影响。
-// 依赖：BUTTON, LABEL, EDIT, RICHEDIT, LISTBOX, TAB, TABPAGE, TREEVIEW,
-//      MENU, TOOLTIP, POPUPHOST, SCROLLBAR, SPLITTER, DOCK, AVATAR,
-//      BADGE, SEPARATOR, GROUPBOX, SLIDER, SWITCH, PROGRESSBAR, COMBOBOX,
-//      SEARCHBOX, SPINBOX, GIF, IMAGEOLE, EMOJIPANEL, FRAMEWINDOW,
-//      XMLBUILDER —— 几乎全部
+// 依赖：BUTTON, LABEL, EDIT, RICHTEXT, LISTBOX, TAB, TABPAGE, TREEVIEW,
+//      MENU, MENUBAR, TOOLTIP, POPUPHOST, SCROLLBAR, SPLITTER, DOCK,
+//      AVATAR, BADGE, SEPARATOR, GROUPBOX, SLIDER, SWITCH, PROGRESSBAR,
+//      COMBOBOX, SEARCHBOX, SPINBOX, GIF, IMAGEOLE, EMOJIPANEL,
+//      FRAMEWINDOW, XMLBUILDER —— 几乎全部
 // 这是个"自动派生"flag，业务无需手动设置；要单独关 gallery 但保留
 // 所有控件，可以在 stdafx.h 里 `#define BUI_DISABLE_GALLERY` 并把下
 // 面表达式整体改成手控（暂未做，按需扩展）。
 #if defined(BUI_FEATURE_BUTTON) \
  && defined(BUI_FEATURE_LABEL) \
  && defined(BUI_FEATURE_EDIT) \
- && defined(BUI_FEATURE_RICHEDIT) \
+ && defined(BUI_FEATURE_RICHTEXT) \
  && defined(BUI_FEATURE_LISTBOX) \
  && defined(BUI_FEATURE_TAB) \
  && defined(BUI_FEATURE_TABPAGE) \
@@ -574,6 +595,9 @@
 // 出半残的库。如果业务真的有特殊需求要绕过，删掉对应 #error 即可。
 // =====================================================================
 
+#if defined(BUI_DISABLE_RICHTEXT) && defined(BUI_FEATURE_EDIT)
+#  error "BUI_FEATURE_EDIT requires BUI_FEATURE_RICHTEXT (DuiEdit derives from DuiRichEdit). Remove BUI_DISABLE_RICHTEXT or also disable EDIT."
+#endif
 #if defined(BUI_DISABLE_EDIT) && defined(BUI_FEATURE_SEARCHBOX)
 #  error "BUI_FEATURE_SEARCHBOX requires BUI_FEATURE_EDIT (DuiSearchBox embeds DuiEditHost). Remove BUI_DISABLE_EDIT or also disable SEARCHBOX."
 #endif
@@ -597,9 +621,6 @@
 #endif
 #if defined(BUI_DISABLE_TAB) && defined(BUI_FEATURE_TABPAGE)
 #  error "BUI_FEATURE_TABPAGE requires BUI_FEATURE_TAB (TabPage embeds DuiTab). Remove BUI_DISABLE_TAB or also disable TABPAGE."
-#endif
-#if defined(BUI_DISABLE_IMAGEOLE) && defined(BUI_FEATURE_RICHEDIT)
-#  error "BUI_FEATURE_RICHEDIT requires BUI_FEATURE_IMAGEOLE (RichEdit uses DuiImageOle for inline images). Remove BUI_DISABLE_IMAGEOLE or also disable RICHEDIT."
 #endif
 #if defined(BUI_DISABLE_LAYOUT) && defined(BUI_FEATURE_FRAMEWINDOW)
 #  error "BUI_FEATURE_FRAMEWINDOW requires BUI_FEATURE_LAYOUT (frame's client area is a layout host). Cannot disable LAYOUT."

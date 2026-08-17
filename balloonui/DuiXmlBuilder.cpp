@@ -52,8 +52,8 @@
 #if BUI_FEATURE_SPINBOX
 #  include "Controls/Input/DuiSpinBox.h"
 #endif
-#if BUI_FEATURE_RICHEDIT
-#  include "Controls/Input/DuiRichEditHost.h"
+#if BUI_FEATURE_RICHTEXT
+#  include "Controls/Input/DuiRichEdit.h"
 #endif
 #if BUI_FEATURE_TREEVIEW
 #  include "Controls/List/DuiTreeView.h"
@@ -733,7 +733,11 @@ std::unique_ptr<DuiControl> BuildLabel(const DuiXmlBuilder::Node& n)
 #if BUI_FEATURE_EDIT
 std::unique_ptr<DuiControl> BuildEdit(const DuiXmlBuilder::Node& n)
 {
-    auto e = std::unique_ptr<DuiEditHost>(new DuiEditHost());
+    // 这里刻意建的是兼容外壳 DuiEditHost 而不是控件本体 DuiEdit。存量代码里
+    // 有大量 dynamic_cast<DuiEditHost*> 去取 XML 里建出来的输入框，建成本体
+    // 的话这些转换会一律得到空指针 —— 而且是编译期查不出、运行期只表现为
+    // "功能点了没反应"的那种失效。等调用方全部改用 DuiEdit 之后再换。
+    std::unique_ptr<DuiEditHost> e(new DuiEditHost());
     DuiEditHost* raw = e.get();
     ApplyCommon(raw, n);
     raw->SetPlaceholder(ToCString(Get(n, "placeholder")));
@@ -759,9 +763,10 @@ std::unique_ptr<DuiControl> BuildEdit(const DuiXmlBuilder::Node& n)
 //   · 布尔 "true" / "1" / "yes" / "True" 视为 true，其它 false
 //   · ApplyCommon 已经处理 id 属性，每个 Build* 都会调
 //
-// HWND-hosted 控件（SearchBox / SpinBox / RichEditHost）：builder 只创建
-// 控件不会调 EnsureCreated —— caller 在 host HWND 就绪后必须自己调一次，
-// 跟 BuildEdit (DuiEditHost) 是同一个约定。
+// 输入框一类的控件（edit / searchbox / spinbox / combobox）：builder 建出来
+// 就能直接用，没有额外的"创建"步骤。2026-08-17 之前它们内嵌真的 Win32 子
+// 窗口，需要调用方在宿主窗口就绪之后自己补一次 EnsureCreated；改成无窗口
+// 实现之后这条约定作废，那个方法只留了个空实现给存量代码。
 // =====================================================================
 
 // ─── 枚举值字符串 → enum 的 helper（COLOR / int / bool 已有通用 parser）─
@@ -1325,16 +1330,44 @@ std::unique_ptr<DuiControl> BuildSpinBox(const DuiXmlBuilder::Node& n)
 }
 #endif // BUI_FEATURE_SPINBOX
 
-#if BUI_FEATURE_RICHEDIT
-std::unique_ptr<DuiControl> BuildRichEdit(const DuiXmlBuilder::Node& n)
+
+#if BUI_FEATURE_RICHTEXT
+// 把 "auto" / "always" / "never" 解析成无窗口富文本控件的滚动条策略。
+//   s：属性值；空串或认不出的值一律回退到 def。
+//   def：认不出时用的默认值。
+DuiRichEdit::ScrollBarPolicy ParseScrollBarPolicy(const std::string& s,
+                                                 DuiRichEdit::ScrollBarPolicy def)
 {
-    auto re = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-    DuiRichEditHost* raw = re.get();
+    if (s == "auto")
+    {
+        return DuiRichEdit::kScrollBarAuto;
+    }
+    if (s == "always")
+    {
+        return DuiRichEdit::kScrollBarAlways;
+    }
+    if (s == "never")
+    {
+        return DuiRichEdit::kScrollBarNever;
+    }
+    return def;
+}
+
+// <richtext> —— 无窗口富文本控件 DuiRichEdit。
+//
+// 属性分两部分：一部分沿用早先富文本标签的名字（早先那个标签建的是内嵌真
+// 子窗口的实现，现已删除），另一部分是本控件独有的 —— 自动增高、滚动条
+// 策略、拖放与右键菜单这几组。
+std::unique_ptr<DuiControl> BuildRichText(const DuiXmlBuilder::Node& n)
+{
+    auto rt = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+    DuiRichEdit* raw = rt.get();
     ApplyCommon(raw, n);
 
-    // multi-line / word-wrap 必须在 EnsureCreated 前设 —— ES_MULTILINE
-    // 等是 baked-in 的窗口风格。XML 解析阶段总是 pre-Create 的，所以
-    // 这里直接调即可。
+    // ---- 基本属性 ----
+    //
+    // 这些属性在本控件上**运行期随时可改**，不像旧控件那样必须赶在创建
+    // 子窗口之前设好 —— 所以这里的先后顺序不重要。
     std::string s = Get(n, "multi-line");
     if (!s.empty())
     {
@@ -1370,23 +1403,91 @@ std::unique_ptr<DuiControl> BuildRichEdit(const DuiXmlBuilder::Node& n)
     {
         raw->SetBackgroundColor(ParseColor(s, RGB(255, 255, 255)));
     }
-    s = Get(n, "auto-url-detect");
-    if (!s.empty())
-    {
-        raw->SetAutoUrlDetect(ParseBool(s, false));
-    }
     s = Get(n, "margins");
     if (!s.empty())
     {
-        int l = 4, t = 2, r = 4, b = 2;
+        int l = 4;
+        int t = 2;
+        int r = 4;
+        int b = 2;
         if (std::sscanf(s.c_str(), "%d,%d,%d,%d", &l, &t, &r, &b) == 4)
         {
             raw->SetMargins(l, t, r, b);
         }
     }
-    return re;
+    s = Get(n, "text");
+    if (!s.empty())
+    {
+        raw->SetText(ToCString(s));
+    }
+
+    // ---- 本控件独有的属性 ----
+
+    s = Get(n, "show-border");
+    if (!s.empty())
+    {
+        raw->SetShowBorder(ParseBool(s, true));
+    }
+    s = Get(n, "focusable");
+    if (!s.empty())
+    {
+        raw->SetFocusable(ParseBool(s, true));
+    }
+    s = Get(n, "paste-plain");
+    if (!s.empty())
+    {
+        raw->SetPasteAsPlainTextDefault(ParseBool(s, false));
+    }
+    s = Get(n, "drag-drop");
+    if (!s.empty())
+    {
+        raw->SetDragDropEnabled(ParseBool(s, true));
+    }
+    s = Get(n, "context-menu");
+    if (!s.empty())
+    {
+        raw->SetContextMenuEnabled(ParseBool(s, true));
+    }
+    s = Get(n, "v-scroll");
+    if (!s.empty())
+    {
+        raw->SetVScrollPolicy(ParseScrollBarPolicy(s, DuiRichEdit::kScrollBarAuto));
+    }
+    s = Get(n, "h-scroll");
+    if (!s.empty())
+    {
+        raw->SetHScrollPolicy(ParseScrollBarPolicy(s, DuiRichEdit::kScrollBarAuto));
+    }
+
+    // ---- 自动增高 ----
+    //
+    // 上下限有两种写法，像素版与行数版。**行数版必须放在像素版之后处理** ——
+    // 两者写的是同一对成员，后设的那个生效；行数版是给「最少一行、最多五行」
+    // 这类需求准备的便捷写法，同时写了就以它为准。
+    s = Get(n, "auto-grow");
+    if (!s.empty())
+    {
+        raw->SetAutoGrow(ParseBool(s, true));
+    }
+    const std::string sMinPx = Get(n, "auto-grow-min");
+    const std::string sMaxPx = Get(n, "auto-grow-max");
+    if (!sMinPx.empty() || !sMaxPx.empty())
+    {
+        raw->SetAutoGrowRange(ParseInt(sMinPx, 0), ParseInt(sMaxPx, 0));
+    }
+    s = Get(n, "auto-grow-lines");
+    if (!s.empty())
+    {
+        int nMinLines = 0;
+        int nMaxLines = 0;
+        if (std::sscanf(s.c_str(), "%d,%d", &nMinLines, &nMaxLines) == 2)
+        {
+            raw->SetAutoGrowLines(nMinLines, nMaxLines);
+        }
+    }
+    return rt;
 }
-#endif // BUI_FEATURE_RICHEDIT
+#endif // BUI_FEATURE_RICHTEXT
 
 #if BUI_FEATURE_TREEVIEW
 // ─── DuiTreeView (XML 范围 B：仅 <column> 子元素，节点仍由 C++ 添加) ───
@@ -1584,10 +1685,11 @@ std::unique_ptr<DuiControl> BuildOne(const DuiXmlBuilder::Node& n,
         return BuildSpinBox(n);
     }
 #endif
-#if BUI_FEATURE_RICHEDIT
-    else if (n.tag == "richedit")
+#if BUI_FEATURE_RICHTEXT
+    //无窗口富文本控件。
+    else if (n.tag == "richtext")
     {
-        return BuildRichEdit(n);
+        return BuildRichText(n);
     }
 #endif
 #if BUI_FEATURE_TREEVIEW
@@ -1651,7 +1753,7 @@ std::unique_ptr<DuiControl> BuildOne(const DuiXmlBuilder::Node& n,
     // Tag dispatch miss —— 既不是已知内置 tag，也没有被 CustomFactory 接住。
     // 三种典型原因：
     //   1) 业务侧拼写错（"buttn"）
-    //   2) 业务侧用了一个 BUI_FEATURE_XXX 关掉的 tag（"treeview"、"richedit"…）
+    //   2) 业务侧用了一个 BUI_FEATURE_XXX 关掉的 tag（"treeview"、"richtext"…）
     //   3) 业务侧自定义 tag 但没注册 CustomFactory
     // 任何一种都要让 user 知道；OutputDebugString 落到 VS Output 窗口（或
     // DebugView），不抛异常 / 不 abort —— Release 构建里也能跑、只是 UI

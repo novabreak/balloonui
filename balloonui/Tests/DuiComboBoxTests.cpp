@@ -266,6 +266,187 @@ static Result Test_ArrowColorWithDataModel()
     return OK(_T("ArrowColorWithDataModel"));
 }
 
+// =====================================================================
+// 下拉浮层落点（combopopup::ClampPopupToWorkArea）
+//
+// 这些用例钉的是"浮层不许跑到桌面外"。真弹浮层要建顶层窗口、要问显示器，
+// 测不了；而落点计算本身是纯算术，把工作区当参数传进来就能直接断言。
+//
+// 统一用一块 1920x1040 的工作区（1080 的屏幕减掉 40 高的任务栏），行高 22、
+// 浮层宽 200 —— 与登录窗账号下拉的实际参数接近。
+// =====================================================================
+
+// 各用例共用的工作区：模拟 1920x1080 屏幕、底部 40 像素任务栏。
+static RECT MakeWorkArea()
+{
+    RECT work;
+    work.left   = 0;
+    work.top    = 0;
+    work.right  = 1920;
+    work.bottom = 1040;
+    return work;
+}
+
+// 造一个下拉框矩形：左上角 (x, y)，宽 200、高 40（与登录窗账号框同高）。
+static RECT MakeCombo(int x, int y)
+{
+    RECT rc;
+    rc.left   = x;
+    rc.top    = y;
+    rc.right  = x + 200;
+    rc.bottom = y + 40;
+    return rc;
+}
+
+// 按行数算浮层期望高度（与 OpenPopup 里的算法一致）。
+static int PopupHeightForRows(int rows, int itemH)
+{
+    return rows * itemH + combopopup::kPopupBorderThickness;
+}
+
+// 下方空间充足 —— 浮层就贴在下拉框正下方、与其左对齐同宽，高度不打折。
+static Result Test_PopupFitsBelow()
+{
+    const RECT work  = MakeWorkArea();
+    const RECT combo = MakeCombo(300, 200);
+    const int  h     = PopupHeightForRows(8, 22);
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 200, h, 22, work);
+
+    EXPECT_INT(rc.left,          300,             _T("Below/left"));
+    EXPECT_INT(rc.top,           combo.bottom,    _T("Below/top"));
+    EXPECT_INT(rc.right - rc.left, 200,           _T("Below/width"));
+    EXPECT_INT(rc.bottom - rc.top, h,             _T("Below/height"));
+    return OK(_T("PopupFitsBelow"));
+}
+
+// 下拉框贴近屏幕底部、下方装不下，但上方装得下 —— 翻到下拉框上方展开，
+// 底边正好贴住下拉框顶边，高度不打折。
+static Result Test_PopupFlipsAbove()
+{
+    const RECT work  = MakeWorkArea();
+    const int  h     = PopupHeightForRows(15, 22);   // 332，下方只剩 60
+    const RECT combo = MakeCombo(300, 940);          // bottom=980，work.bottom=1040
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 200, h, 22, work);
+
+    EXPECT_INT(rc.bottom,          combo.top,  _T("Above/bottom"));
+    EXPECT_INT(rc.top,             combo.top - h, _T("Above/top"));
+    EXPECT_INT(rc.bottom - rc.top, h,          _T("Above/height"));
+    return OK(_T("PopupFlipsAbove"));
+}
+
+// 上下都装不下 —— 选空间大的那一侧，并把高度压到该侧能容纳的整行数。
+// 这里下拉框放在偏上的位置，下方空间更大，故仍往下展开但压矮。
+static Result Test_PopupShrinksToLargerSide()
+{
+    const RECT work  = MakeWorkArea();
+    const int  h     = PopupHeightForRows(40, 22);   // 882，上下都装不下
+    const RECT combo = MakeCombo(300, 300);          // 上方 300、下方 1040-340=700
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 200, h, 22, work);
+
+    // 下方空间 700，能容纳 (700-2)/22 = 31 整行。
+    const int expectH = PopupHeightForRows(31, 22);
+    EXPECT_INT(rc.top,             combo.bottom, _T("Shrink/top"));
+    EXPECT_INT(rc.bottom - rc.top, expectH,      _T("Shrink/height"));
+    EXPECT_BOOL(rc.bottom <= work.bottom, true,  _T("Shrink/inWork"));
+    return OK(_T("PopupShrinksToLargerSide"));
+}
+
+// 下拉框贴着屏幕右缘 —— 浮层右边会越界，须整体往左挪到刚好贴住右边界，
+// 宽度不变（不允许把浮层压窄）。
+static Result Test_PopupClampsRightEdge()
+{
+    const RECT work  = MakeWorkArea();
+    const RECT combo = MakeCombo(1850, 200);   // 右边到 2050，已超出 1920
+    const int  h     = PopupHeightForRows(8, 22);
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 200, h, 22, work);
+
+    EXPECT_INT(rc.right,           work.right, _T("Right/right"));
+    EXPECT_INT(rc.left,            1720,       _T("Right/left"));
+    EXPECT_INT(rc.right - rc.left, 200,        _T("Right/width"));
+    return OK(_T("PopupClampsRightEdge"));
+}
+
+// 浮层比整个工作区还宽 —— 往左挪会挪过头顶出左边界，此时以左边界为准贴住，
+// 保证左上角始终落在桌面内（右侧溢出无法避免，宽度是调用方定的）。
+static Result Test_PopupClampsLeftEdge()
+{
+    const RECT work  = MakeWorkArea();
+    const RECT combo = MakeCombo(100, 200);
+    const int  h     = PopupHeightForRows(8, 22);
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 2400, h, 22, work);
+
+    EXPECT_INT(rc.left, work.left, _T("Left/left"));
+    return OK(_T("PopupClampsLeftEdge"));
+}
+
+// 工作区比一行还矮的极端情况 —— 高度按下限保底为一行，位置贴住工作区上沿，
+// 至少保证左上角在桌面内，不能算出负坐标把浮层甩到屏幕外。
+static Result Test_PopupTinyWorkArea()
+{
+    RECT work;
+    work.left   = 0;
+    work.top    = 0;
+    work.right  = 1920;
+    work.bottom = 10;                          // 比一行(22)还矮
+    const RECT combo = MakeCombo(300, 2);
+    const int  h     = PopupHeightForRows(8, 22);
+
+    RECT rc = combopopup::ClampPopupToWorkArea(combo, 200, h, 22, work);
+
+    EXPECT_INT(rc.bottom - rc.top, PopupHeightForRows(combopopup::kPopupMinRows, 22),
+                                                _T("Tiny/height"));
+    EXPECT_INT(rc.top,             work.top,    _T("Tiny/top"));
+    EXPECT_BOOL(rc.left >= work.left, true,     _T("Tiny/left"));
+    return OK(_T("PopupTinyWorkArea"));
+}
+
+// ---- 浮层项下标 -> m_items 下标的映射 ----
+//
+// 过滤激活时浮层只显示命中的几项，它报回来的是"第几个命中项"。不映射的话
+// 选中会选错人、删除会删错人（账号下拉里点删除叉最容易撞上）。
+
+static Result Test_MapPopupIndexNoFilter()
+{
+    // 映射表为空 = 没在过滤，浮层下标与 m_items 下标 1:1。
+    std::vector<int> none;
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(0, none), 0, _T("Map/none0"));
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(3, none), 3, _T("Map/none3"));
+    return OK(_T("MapPopupIndexNoFilter"));
+}
+
+static Result Test_MapPopupIndexWithFilter()
+{
+    // 过滤命中的是 m_items 的第 0、1、4 项（与 IncPrefixCaseInsensitive 同款）。
+    std::vector<int> filtered;
+    filtered.push_back(0);
+    filtered.push_back(1);
+    filtered.push_back(4);
+
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(0, filtered), 0, _T("Map/f0"));
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(1, filtered), 1, _T("Map/f1"));
+    // 关键的一条：浮层第 3 行是 m_items 的第 5 项，不是第 3 项。
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(2, filtered), 4, _T("Map/f2"));
+    return OK(_T("MapPopupIndexWithFilter"));
+}
+
+static Result Test_MapPopupIndexOutOfRange()
+{
+    // 越出映射表范围时原样返回，由调用方自己判越界（各调用点都判了）。
+    std::vector<int> filtered;
+    filtered.push_back(2);
+    filtered.push_back(7);
+
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(-1, filtered), -1, _T("Map/neg"));
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(2,  filtered), 2,  _T("Map/over"));
+    EXPECT_INT(DuiComboBox::MapPopupIndexWithFilter(99, filtered), 99, _T("Map/far"));
+    return OK(_T("MapPopupIndexOutOfRange"));
+}
+
 #undef EXPECT_INT
 #undef EXPECT_BOOL
 #undef EXPECT_SIZE
@@ -290,7 +471,18 @@ CString RunAll()
         { _T("ArrowColorDefault"),         &Test_ArrowColorDefault         },
         { _T("ArrowColorRoundTrip"),       &Test_ArrowColorRoundTrip       },
         { _T("ArrowColorOrthogonal"),      &Test_ArrowColorOrthogonal      },
-        { _T("ArrowColorWithDataModel"),   &Test_ArrowColorWithDataModel   }
+        { _T("ArrowColorWithDataModel"),   &Test_ArrowColorWithDataModel   },
+        // ---- 下拉浮层落点夹取 ----
+        { _T("PopupFitsBelow"),            &Test_PopupFitsBelow            },
+        { _T("PopupFlipsAbove"),           &Test_PopupFlipsAbove           },
+        { _T("PopupShrinksToLargerSide"),  &Test_PopupShrinksToLargerSide  },
+        { _T("PopupClampsRightEdge"),      &Test_PopupClampsRightEdge      },
+        { _T("PopupClampsLeftEdge"),       &Test_PopupClampsLeftEdge       },
+        { _T("PopupTinyWorkArea"),         &Test_PopupTinyWorkArea         },
+        // ---- 浮层项下标映射 ----
+        { _T("MapPopupIndexNoFilter"),     &Test_MapPopupIndexNoFilter     },
+        { _T("MapPopupIndexWithFilter"),   &Test_MapPopupIndexWithFilter   },
+        { _T("MapPopupIndexOutOfRange"),   &Test_MapPopupIndexOutOfRange   }
     };
 
     CString out;

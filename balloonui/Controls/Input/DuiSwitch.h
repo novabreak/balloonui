@@ -19,8 +19,9 @@ namespace balloonwjui {
 //     色品牌绿 #07C160（某信绿），白色圆形滑块嵌在内部、距边 2px。
 //   · 切换时滑块从一侧滑到另一侧，底色同步从 off 色 fade 到 on 色，时长
 //     150ms、缓动函数 EaseOutCubic。动画通过 DuiAnimMgr / DuiDoubleAnim
-//     驱动；host 必须周期性调 DuiAnimMgr::Inst().TickAll(GetTickCount())
-//     才看得到中间帧（DuiGallery 的 GalleryFrame 就这么干）。
+//     驱动；DuiAnimMgr 自带 16ms 脉冲定时器，host <u>不需要也不应该</u>
+//     额外挂 timer 调 TickAll，只要所在线程在泵消息即可。TickAll 仍是
+//     public 的，供单元测试手动驱动。
 //   · 鼠标在控件任意位置点松（按下 + 松开都在控件内）即翻转状态；拖出
 //     再松不翻转（与 DuiButton::Checkbox 一致）。
 //   · 键盘 Space / Enter 翻转；其他键不消费、由 host 上冒。

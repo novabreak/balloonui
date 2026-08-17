@@ -6,6 +6,8 @@
 #include "DuiNotify.h"
 #include "BalloonUiApi.h"
 
+struct IDropTarget;
+
 namespace balloonwjui {
 
 class DuiHost;
@@ -102,17 +104,18 @@ public:
 
     // Visibility / enabled / focusable
     //
-    // SetVisible 设置自身 m_bVisible 状态。除了触发 Invalidate，<u>还会
-    // 递归同步所有 HwndHostControl 后代</u>的真 HWND 子窗显隐：
-    // ShowWindow(SW_HIDE) 当后代 IsEffectivelyVisible == false（即自身或
-    // 任意祖先是 invisible），SW_SHOWNOACTIVATE 当 effective 可见。这样
-    // 业务隐藏一个父容器时，里面真 EDIT / RICHEDIT 子窗也跟着隐藏，
-    // 不会"DUI 不画但 HWND 还透出来"。
+    // SetVisible 设置自身 m_bVisible 状态并触发 Invalidate。
+    //
+    // 注意它<u>不</u>触发重新布局：容器排版时会跳过不可见的子控件，因此控件在
+    // 隐藏期间若发生过一次重排，它停留的矩形已经过时，再 SetVisible(true) 时
+    // 那份矩形不会被重新算过。显隐变化之后需要由调用方对相应的容器调一次
+    // ForceLayout。
     void        SetVisible(bool b);
     bool        IsVisible() const { return m_bVisible; }
 
-    // 走父链算"有效可见性"：自己 + 所有祖先都 m_bVisible == true 才返
-    // true。HwndHostControl 用本接口判断真 HWND 子窗该不该显示。
+    // 走父链算"有效可见性"：自己 + 所有祖先都 m_bVisible == true 才返 true。
+    // 与 IsVisible 的区别在于后者只看本控件自己的标志，父容器被隐藏时它仍返回
+    // true。需要判断「这个控件此刻是否真的会被画出来」时用本接口。
     bool        IsEffectivelyVisible() const;
     void        SetEnabled(bool b);
     bool        IsEnabled() const { return m_bEnabled; }
@@ -142,7 +145,13 @@ public:
     // Returns the deepest visible+enabled child (or nullptr).
     virtual DuiControl* HitTest(POINT ptHostClient);
 
-    // Paint (clipped to m_rcItem by the host); default paints children.
+    // 绘制自身；默认实现递归绘制可见的子控件。
+    //
+    // 注意：**宿主不会替你裁剪到 m_rcItem**。宿主与本基类的绘制路径里都没有
+    // 设置任何裁剪区，rcDirty 只是一个「这块区域需要重画」的建议值，画笔完全
+    // 可以越出 m_rcItem。需要裁剪的控件必须自己在绘制前后 SaveDC / RestoreDC
+    // 并调用 IntersectClipRect（参考 DuiListBox 的做法）。**不能用
+    // SelectClipRgn** —— 那是替换语义，会把外层容器已经设好的裁剪一起撤掉。
     virtual void OnPaint(HDC hdc, const RECT& rcDirty);
 
     // Layout: laid out by parent into rcAvail; default sets m_rcItem = rcAvail.
@@ -163,7 +172,57 @@ public:
     virtual bool OnKeyDown     (UINT vk, UINT flags);
     virtual bool OnSetFocus    ();
     virtual bool OnKillFocus   ();
+
+    // 本控件获得 DUI 焦点时，是否需要**宿主窗口本身**持有 Win32 键盘焦点。
+    //
+    // 背景：纯 DUI 控件没有自己的窗口，键盘消息只能先投递到宿主窗口、再由
+    // 宿主分发下来。而 Windows 不会因为用户点击了某个子窗口就自动把键盘焦点
+    // 交给它 —— 必须由程序自己调用系统接口去要。宿主窗口若一直没有键盘焦点，
+    // 字符与按键消息就会全部投递给它的父窗口，纯 DUI 控件一个也收不到。
+    //
+    // 为什么不干脆让宿主无条件抢焦点：那会改变现有控件的行为。点击按钮之类
+    // 不需要键盘的控件时抢焦点，会让正在编辑的输入框收到失焦通知，业务可能
+    // 据此认为「编辑结束了」。所以改成由控件自己声明需不需要。
+    //
+    // 默认 false。目前只有无窗口富文本控件覆写为 true。
+    virtual bool NeedsWin32Focus() const { return false; }
+
+    // 本控件用来接收拖放的目标对象。
+    //
+    // 背景：操作系统的拖放目标是**按窗口注册**的，一个窗口只能注册一个。
+    // 而纯 DUI 控件没有自己的窗口、共用宿主窗口，所以不能各注册各的。
+    // 解法是由宿主注册唯一一个分发器，收到拖放事件后按光标位置找到命中的
+    // 控件，再转发给这里返回的对象。
+    //
+    //   返回：本控件的拖放目标；不接收拖放的控件返回 nullptr（默认）。
+    //         **所有权归控件**，调用方只借用、不负责释放。
+    virtual ::IDropTarget* GetDropTarget() { return nullptr; }
     virtual bool OnSetCursor   (POINT pt);   // return true if SetCursor() was called
+
+    // ---- 宿主转发的原始窗口消息 ----
+    //
+    // 宿主收到白名单内的窗口消息时，原样转交给当前的 DUI 焦点控件。这条通道
+    // 是给「自己没有 HWND、却需要完整窗口消息序列」的控件准备的。目前的使用者
+    // 是无窗口富文本控件 DuiRichEdit —— 它内部的排版引擎要求宿主把按键抬起、
+    // 系统键、输入法组字等消息原封不动地喂给它，缺一条就会出问题（例如缺了
+    // 按键抬起，引擎就不知道 Shift 键是否还按着，按住 Shift 用方向键选文字
+    // 会失灵）。
+    //
+    // 为什么做成一个通用接口，而不是每类消息各开一个虚函数：这批消息（按键
+    // 抬起、系统键、输入法五条、输入语言切换等十余条）几乎只服务于文本编辑类
+    // 控件。若按库内既有风格逐个开虚函数，全库每个控件都要背上十几个用不到的
+    // 空实现。反过来也不采用「所有没人处理的消息一律下发」的兜底做法 —— 那样
+    // 截获面过大，容易影响现有控件的行为。折中办法是：宿主用白名单明确列出
+    // 转发哪些消息（见 DuiHost 的消息映射表），控件这边只开这一个口子。
+    //
+    // 默认实现返回 false（不处理），因此现有控件不受任何影响。
+    //
+    //   uMsg / wParam / lParam：原始窗口消息及其两个参数，未作任何加工。
+    //   lResult：出参。返回 true 时由本控件填写该消息的返回值；返回 false
+    //            时本参数不会被读取。
+    //   返回：true 表示本控件已处理，宿主把 lResult 作为消息返回值；
+    //         false 表示未处理，宿主交回系统默认处理。
+    virtual bool OnRawMessage(UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT& lResult);
 
     // Convenience: invalidate own rect through the host.
     void Invalidate();
@@ -175,20 +234,20 @@ public:
 
     // Bubble a DuiNotify (code [, extra]) to the host's parent HWND.
     // Public so composite controls (which are themselves DuiControls) can fire.
-    LRESULT NotifyParent(UINT code, LPARAM extra = 0);
+    //
+    // 声明为虚函数，是为了让被其它控件嵌在内部的子控件有办法停止发送自己的
+    // 通知。通知直接发送到宿主窗口、不沿控件树逐层传递（见实现），因此外层
+    // 控件无法拦截内层控件发出的通知；复合控件（例如下拉框内部嵌的输入框）
+    // 若要对外只发送自身的一份通知，只能由内层控件覆写本方法并丢弃通知。
+    virtual LRESULT NotifyParent(UINT code, LPARAM extra = 0);
 
-    // Read-only access to the immediate children. Framework code (e.g.
-    // DuiScrollView clipping its hosted HWNDs to the viewport) walks the
-    // subtree without needing to subclass DuiControl.
+    // 只读访问直接子控件。库内需要遍历子树的代码用它即可，不必为此继承
+    // DuiControl 去取受保护的 m_children。
     const std::vector<std::unique_ptr<DuiControl>>& Children() const { return m_children; }
 
 protected:
     // Internal: host calls this when adding control to the tree.
     void SetParent_(DuiControl* parent) { m_pParent = parent; }
-
-    // 递归遍历 node 子树（含自身），对每个 HwndHostControl 后代按其
-    // IsEffectivelyVisible 同步真 HWND 显隐。SetVisible 状态变化后调一次。
-    static void SyncHwndVisibilitySubtree_(DuiControl* node);
     void SetHost_(DuiHost* host)        { m_pHost = host; }
 
 protected:

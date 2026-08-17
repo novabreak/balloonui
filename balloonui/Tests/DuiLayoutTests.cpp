@@ -675,6 +675,157 @@ static Result Test_VBoxCard_InvalidBorderSkipsRegardlessOfWidth()
     return MakeOK(_T("VBoxCard_InvalidBorderSkipsRegardlessOfWidth"));
 }
 
+// ---- 主轴自动档（Hint::Auto / kAutoMain） --------------------------------
+//
+// 这一组用例锁定「自动档」的三条约定，它们分散在 DuiLayout.cpp 的六个读取点，
+// 漏改任何一个都会表现为「布局大体正常、只有某种嵌套下尺寸不对」这类难查的
+// 症状，所以每条都单独立一个用例钉住：
+//   1) 排版时，自动档子控件在主轴上占用它自己 GetDesiredSize() 报告的尺寸；
+//   2) 子控件没有覆写 GetDesiredSize()（默认返回 0）时，自动档退化为 0 像素，
+//      不能被误判成「按权重」而去瓜分剩余空间；
+//   3) 容器自己的 GetDesiredSize() 要把自动档子控件的尺寸算进去，否则自动档
+//      嵌套在另一个自动档容器里时，外层会算出偏小的尺寸。
+
+// 主轴尺寸可在运行期改变的测试用子控件，用来模拟「内容变多后自动增高」。
+class GrowableChild : public DuiControl
+{
+public:
+    GrowableChild(int cx, int cy) : m_w(cx), m_h(cy) {}
+    void OnPaint(HDC, const RECT&) override {}
+    SIZE GetDesiredSize() const override { return SIZE{ m_w, m_h }; }
+    // 改变本控件报告的期望尺寸；调用方需要再触发一次布局才能看到效果。
+    void SetDesired(int cx, int cy)
+    {
+        m_w = cx;
+        m_h = cy;
+    }
+private:
+    int m_w;    // 期望宽度，像素
+    int m_h;    // 期望高度，像素
+};
+
+// VBox：自动档子控件按自己报告的高度占位，剩余高度归按权重的兄弟。
+static Result Test_VBox_Auto_UsesChildDesiredHeight()
+{
+    DuiVBox box;
+    MeasuredChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new MeasuredChild(100, 40)),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Weight(1));
+    box.Layout(RECT{0, 0, 200, 300});
+    EXPECT_RECT(a, 0,  0, 200,  40, _T("VBox_Auto_UsesChildDesiredHeight/a"));
+    EXPECT_RECT(b, 0, 40, 200, 300, _T("VBox_Auto_UsesChildDesiredHeight/b"));
+    return MakeOK(_T("VBox_Auto_UsesChildDesiredHeight"));
+}
+
+// HBox：同上，只是主轴换成 X。
+static Result Test_HBox_Auto_UsesChildDesiredWidth()
+{
+    DuiHBox box;
+    MeasuredChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new MeasuredChild(60, 20)),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Weight(1));
+    box.Layout(RECT{0, 0, 300, 100});
+    EXPECT_RECT(a,  0, 0,  60, 100, _T("HBox_Auto_UsesChildDesiredWidth/a"));
+    EXPECT_RECT(b, 60, 0, 300, 100, _T("HBox_Auto_UsesChildDesiredWidth/b"));
+    return MakeOK(_T("HBox_Auto_UsesChildDesiredWidth"));
+}
+
+// 子控件没有覆写 GetDesiredSize()（默认返回 0）时，自动档占 0 像素。
+// 这条专门防「fixedMain < 0 就当成按权重」这个实现错误：一旦写错，本用例里的
+// 第一个子控件会去瓜分一半高度，b 的 top 就不是 0 了。
+static Result Test_VBox_Auto_ZeroWhenChildReportsNothing()
+{
+    DuiVBox box;
+    StubChild *a, *b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new StubChild()),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Weight(1));
+    box.Layout(RECT{0, 0, 200, 300});
+    EXPECT_RECT(a, 0, 0, 200,   0, _T("VBox_Auto_ZeroWhenChildReportsNothing/a"));
+    EXPECT_RECT(b, 0, 0, 200, 300, _T("VBox_Auto_ZeroWhenChildReportsNothing/b"));
+    return MakeOK(_T("VBox_Auto_ZeroWhenChildReportsNothing"));
+}
+
+// 自动档同样要加上 Hint 的外边距，位置和尺寸都受影响。
+static Result Test_VBox_Auto_MarginsApplied()
+{
+    DuiVBox box;
+    MeasuredChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new MeasuredChild(100, 40)),
+                 DuiLayout::Hint().Auto().Margin(0, 10, 0, 5));
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Weight(1));
+    box.Layout(RECT{0, 0, 200, 300});
+    // 上边距 10 + 自身 40 + 下边距 5 = 55，第二个子控件从 55 开始。
+    EXPECT_RECT(a, 0, 10, 200,  50, _T("VBox_Auto_MarginsApplied/a"));
+    EXPECT_RECT(b, 0, 55, 200, 300, _T("VBox_Auto_MarginsApplied/b"));
+    return MakeOK(_T("VBox_Auto_MarginsApplied"));
+}
+
+// 子控件改变期望尺寸后重新排版，自动档跟着变 —— 这正是 DuiRichEdit 自动增高
+// 依赖的路径：编辑器内容变多 → GetDesiredSize 报告更大的高度 → 重新布局。
+static Result Test_VBox_Auto_FollowsChildRemeasure()
+{
+    DuiVBox box;
+    GrowableChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new GrowableChild(100, 40)),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Weight(1));
+    box.Layout(RECT{0, 0, 200, 300});
+    EXPECT_RECT(a, 0, 0, 200, 40, _T("VBox_Auto_FollowsChildRemeasure/before"));
+
+    a->SetDesired(100, 90);
+    box.Layout(RECT{0, 0, 200, 300});
+    EXPECT_RECT(a, 0,  0, 200,  90, _T("VBox_Auto_FollowsChildRemeasure/after"));
+    EXPECT_RECT(b, 0, 90, 200, 300, _T("VBox_Auto_FollowsChildRemeasure/sibling"));
+    return MakeOK(_T("VBox_Auto_FollowsChildRemeasure"));
+}
+
+// 容器自己的期望高度要把自动档子控件算进去（DuiVBox::GetDesiredSize 那一处）。
+// 缺了这一步，把自动档容器再放进外层自动档容器时，外层会算出偏小的高度。
+static Result Test_VBox_Desired_AutoContributes()
+{
+    DuiVBox box;
+    MeasuredChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new MeasuredChild(100, 40)),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Fixed(30));
+    // 主轴：自动档 40 + 固定档 30 = 70；交叉轴取最大值：max(100, 0) = 100。
+    EXPECT_DESIRED(box, 100, 70, _T("VBox_Desired_AutoContributes"));
+    (void)a;
+    (void)b;
+    return MakeOK(_T("VBox_Desired_AutoContributes"));
+}
+
+// 同上，水平方向（DuiHBox::GetDesiredSize 那一处）。
+static Result Test_HBox_Desired_AutoContributes()
+{
+    DuiHBox box;
+    MeasuredChild* a;
+    StubChild* b;
+    box.AddChild(std::unique_ptr<DuiControl>(a = new MeasuredChild(60, 20)),
+                 DuiLayout::Hint().Auto());
+    box.AddChild(std::unique_ptr<DuiControl>(b = new StubChild()),
+                 DuiLayout::Hint().Fixed(30));
+    // 主轴：自动档 60 + 固定档 30 = 90；交叉轴取最大值：max(20, 0) = 20。
+    EXPECT_DESIRED(box, 90, 20, _T("HBox_Desired_AutoContributes"));
+    (void)a;
+    (void)b;
+    return MakeOK(_T("HBox_Desired_AutoContributes"));
+}
+
 #undef EXPECT_DESIRED
 #undef EXPECT_RECT
 
@@ -712,6 +863,14 @@ CString RunAll()
         { _T("Grid_Desired_FixedCellSize"),          &Test_Grid_Desired_FixedCellSize          },
         { _T("Grid_Desired_GapPadding"),             &Test_Grid_Desired_GapPadding             },
         { _T("Grid_Desired_NoChildren"),             &Test_Grid_Desired_NoChildren             },
+        // ---- 主轴自动档（Hint::Auto）----
+        { _T("VBox_Auto_UsesChildDesiredHeight"),    &Test_VBox_Auto_UsesChildDesiredHeight    },
+        { _T("HBox_Auto_UsesChildDesiredWidth"),     &Test_HBox_Auto_UsesChildDesiredWidth     },
+        { _T("VBox_Auto_ZeroWhenChildReportsNothing"),&Test_VBox_Auto_ZeroWhenChildReportsNothing},
+        { _T("VBox_Auto_MarginsApplied"),            &Test_VBox_Auto_MarginsApplied            },
+        { _T("VBox_Auto_FollowsChildRemeasure"),     &Test_VBox_Auto_FollowsChildRemeasure     },
+        { _T("VBox_Desired_AutoContributes"),        &Test_VBox_Desired_AutoContributes        },
+        { _T("HBox_Desired_AutoContributes"),        &Test_HBox_Desired_AutoContributes        },
         // ---- DuiVBox 卡片样式 ----
         { _T("VBoxCard_Defaults"),                       &Test_VBoxCard_Defaults                       },
         { _T("VBoxCard_SettersRoundTrip"),               &Test_VBoxCard_SettersRoundTrip               },

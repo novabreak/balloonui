@@ -14,7 +14,7 @@ balloonui is a **DUI (DirectUI) UI library** for Windows desktop apps. "DirectUI
 
 Typical scenarios (every demo bundled in this repo is built on balloonui):
 
-- **Message-stream / IM apps** (XChat — a Weixin look-alike, NewChatDemo, DemoChatBubble): three-pane layout (left nav + middle list + right content), custom chat bubbles / file cards / emoji panels, and a RichEdit input field with emoji and image insertion.
+- **Message-stream / IM apps** (XChat — a Weixin look-alike, NewChatDemo, DemoChatBubble): three-pane layout (left nav + middle list + right content), custom chat bubbles / file cards / emoji panels, and a rich-text input field with emoji and image insertion.
 - **Consumer-style multi-page apps** (CloudMelodyDesktop music app "FangMusic"): card grids, media player, Now-Playing, per-pixel-alpha desktop-lyrics overlay, full-screen immersive mode, and a playback-time-driven UI.
 - **Utility / management UIs** (DemoTaskManager Task-Manager look-alike, DuiGallery control showcase): "information-dense" pages packed with menus / tabs / tables / trees / lists / settings items.
 - **Visual demos / single controls** (DemoCircularProgress, DemoFileTypeIcon, DemoNinePatchBg, DemoTextBadgeTile, DemoTreeViewLargeData): each demo focuses on one control or one custom-paint technique (GDI+ anti-aliasing, 9-grid stretching, virtual list, file-type icon, ...).
@@ -31,7 +31,7 @@ Not a good fit: 3D / high-throughput video rendering (use D3D / Media Foundation
 | **Startup / memory cost** | Extremely low (DLL ~1 MB); a frame starts in < 100 ms | Low | WPF: medium; WinUI: heavier | High (Chromium core ~100 MB) |
 | **UI freedom** | **Very high** — subclass any control and override `OnPaint_` to draw anti-aliased bubbles, circular buttons, gradient covers directly | Constrained by the system theme; custom drawing needs OWNERDRAW + subclassing — high engineering cost | Stylesheets / templates are flexible, but heavier | CSS is unlimited, but rendering goes through GPU compositing — high hardware usage |
 | **Layout description** | Declarative XML (`<hbox>`/`<vbox>`/`<grid>` etc.); custom-tag factories pluggable | Pure code (CreateWindow + manual coordinates) or static .rc dialogs — hard to make responsive | XAML / QML — powerful but steep learning curve | HTML + CSS |
-| **IME / Chinese input** | Native (via the HWND-hosted EDIT / RichEdit exceptions, `DuiEditHost`) | Native | Native (mature) | Native |
+| **IME / Chinese input** | Native (text boxes use the system text services; no real window involved) | Native | Native (mature) | Native |
 | **DPI awareness** | Per-Monitor V2 — one line to opt in | Doable, but requires hand-wiring `WM_DPICHANGED` end-to-end | WPF/WinUI: built-in; Qt: version-dependent | WebView handles it |
 | **External dependencies** | Just ATL / WTL 9.0 + GDI / GDI+ / comctl32 / richedit (all OS-provided) | None | Needs .NET runtime / Qt shared libs | Embeds full Chromium |
 | **Cross-platform** | No (Windows only) | No | Yes | Yes |
@@ -44,8 +44,8 @@ Not a good fit: 3D / high-throughput video rendering (use D3D / Media Foundation
 
 30+ controls, with these key design choices:
 
-- **Single-HWND model**: the entire UI tree shares one real window (`DuiHost`); all child controls are logical nodes (`DuiControl`) and do not create HWNDs — so the control count is not bounded by the GDI handle limit.
-- **HWND-Hosted exceptions**: text controls that need IME (`DuiEditHost` / `DuiRichEditHost`) embed a real EDIT/RichEdit via the `HwndHostControl` adapter.
+- **Single-HWND model**: the entire UI tree shares one real window (`DuiHost`); all child controls are logical nodes (`DuiControl`) and do not create HWNDs — so the control count is not bounded by the GDI handle limit. **This rule has no exceptions**: once the text box went windowless on 2026-08-17, the last control that embedded a real child window disappeared, and the library no longer provides any facility for attaching a real window to the control tree. Every control is painted by the library itself, is clipped by its parent container, and takes part in the same paint order.
+- **Text boxes use the system text services**: the plain text box (`DuiEdit`) and the rich text box (`DuiRichEdit`) call the rich-text layout engine that ships with Windows. IME, clipboard, selection and undo/redo all come from that engine, so no real window has to be created for them.
 - **Double-buffered painting**: `DuiHost` has a built-in offscreen DC; controls paint directly to that HDC — flicker-free.
 - **Declarative XML layout**: `DuiXmlBuilder` parses XML into a control tree; you can register a custom-tag factory to inject custom-drawn nodes.
 - **Event bubbling**: child controls call `NotifyParent(DUIN_*, extra)` to bubble up a `WM_DUI_NOTIFY`.
@@ -182,13 +182,13 @@ LRESULT OnDuiNotify(UINT, WPARAM, LPARAM lParam, BOOL&)
 | `<button>` | DuiButton | Interactive | push / icon / checkbox / radio — four flavors |
 | `<slider>` | DuiSlider | Interactive | Numeric slider |
 | `<switch>` | DuiSwitch | Interactive | iOS-style rounded pill switch (150 ms animation) |
-| `<edit>` | DuiEditHost | HWND | HWND-hosted single-/multi-line EDIT |
-| `<richedit>` | DuiRichEditHost | HWND | HWND-hosted rich text (images / links / IME) |
-| `<searchbox>` | DuiSearchBox | HWND | Search box with magnifier + clear button (wraps an EDIT) |
-| `<spinbox>` | DuiSpinBox | HWND | Integer spinner (wraps an EDIT) |
+| `<edit>` | DuiEdit | Interactive | Windowless single-/multi-line plain text box |
+| `<richtext>` | DuiRichEdit | Interactive | Windowless rich text (can be overlapped / auto-grow / overlay scrollbar) |
+| `<searchbox>` | DuiSearchBox | Interactive | Search box with magnifier + clear button (it *is* a text box) |
+| `<spinbox>` | DuiSpinBox | Interactive | Integer spinner (wraps a text box) |
 | `<treeview>` | DuiTreeView | List | Hierarchical tree / multi-column table hybrid (XML only declares `<column>`s; nodes are added from C++) |
 
-**HWND**-category controls embed a real HWND (OS-native EDIT / RICHEDIT). After construction, the caller must call `EnsureCreated(hostHwnd)` once *after* the host HWND is ready (see [§3.4](#xml-ensure-created)). All other categories are HWND-less pure DUI controls, usable as soon as constructed.
+Every tag in this table builds an **HWND-less pure DUI control**, usable as soon as it is constructed — there is no extra "create" step. Before 2026-08-17, `<edit>` / `<searchbox>` / `<spinbox>` / `<combobox>` embedded a real Win32 child window and the caller had to call `EnsureCreated(hostHwnd)` once; that convention is retired now that they are windowless (see [§3.4](#xml-ensure-created)).
 
 <a id="xml-common-attrs"></a>
 
@@ -422,49 +422,60 @@ No event.
 | `off-color` | "r,g,b" | Pill background color in the off state. Default RGB(229,229,229) (light gray). |
 | `knob-color` | "r,g,b" | Knob color. Default RGB(255,255,255) (white). |
 
-**Animation dependency:** the toggle is driven by `DuiAnimMgr` — the host must periodically call `balloonwjui::DuiAnimMgr::Inst().TickAll(::GetTickCount())` (typically a 16 ms `WM_TIMER` pulse) to see the intermediate frames. `DuiGallery`'s `GalleryFrame` already wires this up; a business app's main dialog / top-level frame must add the same pulse. Without it the final state is still correct — there's just no animated transition.
+**Animation driver:** the toggle is driven by `DuiAnimMgr`, which owns a shared 16 ms pulse timer: it installs the timer when its active list goes from empty to non-empty and drops it again once every animation has finished (or `Clear()` is called). The host therefore <u>does not need to, and should not,</u> call `TickAll` periodically — as long as its thread pumps messages the intermediate frames come out on their own. `TickAll` stays public for **manual driving from unit tests** (it works without an HWND).
 
 **Event**: `DUIN_VALUECHANGED` (`extra` = 1 (on) / 0 (off)) — fires when the user toggles via mouse click / Space / Enter; programmatic `SetChecked()` calls do <u>not</u> fire it, matching `DuiButton` checkbox behavior.
 
 <a id="xml-edit"></a>
 
-#### 3.3.12 `<edit>` — DuiEditHost
+#### 3.3.12 `<edit>` — DuiEdit (windowless)
 
 | Attribute | Type | Meaning / default |
 | --- | --- | --- |
 | `placeholder` | string | Placeholder hint shown when empty. |
-| `password` | bool | Password mode (displays ●). Default false. |
+| `password` | bool | Password mode (content shown as mask characters). Default false. |
 | `multiline` | bool | Multi-line editing. Default false. |
 
-**EnsureCreated constraint**: `<edit>` embeds a real EDIT HWND; you must call `edit->EnsureCreated(hostHwnd)` after the host HWND is ready before it is actually created. See [§3.4](#xml-ensure-created).
+**These properties can be changed at any time at run time.** Password, multi-line, read-only, word-wrap and max-length are just property bits in the windowless implementation: call the setter and it takes effect immediately, with no need to destroy and rebuild the control. Before 2026-08-17 they were window style bits fixed at creation time, and changing one meant rebuilding the whole child window.
+
+**No EnsureCreated needed** — this control has no child window; whatever the builder produces is ready to use. See [§3.4](#xml-ensure-created).
+
+The type the builder actually instantiates is the compatibility shell `DuiEditHost` (a subclass of `DuiEdit` that only adds a placeholder-visibility switch), so that the many existing `dynamic_cast<DuiEditHost*>` calls still return a pointer. New code can simply cast to `DuiEdit*`; both work.
 
 **Events**:
 
 | code | When it fires |
 | --- | --- |
-| `DUIN_VALUECHANGED` | EN_CHANGE — text changed (on every character input) |
-| `DUIN_SETFOCUS` | EN_SETFOCUS |
-| `DUIN_KILLFOCUS` | EN_KILLFOCUS |
+| `DUIN_VALUECHANGED` | Text changed (typing, IME commit, paste, and also a programmatic `SetText`) |
+| `DUIN_SETFOCUS` | Gained keyboard focus |
+| `DUIN_KILLFOCUS` | Lost keyboard focus |
+| `DUIN_EDIT_ENTER` | Enter pressed in single-line mode (not fired in multi-line mode, where Enter inserts a line break) |
+| `DUIN_EDIT_ESCAPE` | Esc pressed (fired in both single- and multi-line mode) |
+| `DUIN_EDIT_LEFT_ICON_CLICK` / `DUIN_EDIT_RIGHT_ICON_CLICK` | The inline icon on that side was clicked (requires `SetIconClickable` first) |
 
-<a id="xml-richedit"></a>
+<a id="xml-richtext"></a>
 
-#### 3.3.13 `<richedit>` — DuiRichEditHost
+#### 3.3.13 `<richtext>` — DuiRichEdit (windowless)
+
+**Basic text attributes**: `text` (initial content), `placeholder` (hint shown when empty), `read-only` (default false), `max-length` (maximum character count; 0 = unlimited), `multi-line` (default true), `word-wrap` (default true), `text-color` / `bg-color` (`"r,g,b"` text and background colors), `margins` (`"l,t,r,b"` inner margins). All of them can be changed at runtime; the control never has to be recreated.
+
+Attributes **unique to this control**:
 
 | Attribute | Type | Meaning / default |
 | --- | --- | --- |
-| `placeholder` | string | Placeholder hint when empty. |
-| `read-only` | bool | Read-only. Default false. |
-| `max-length` | int | Maximum character count. 0 = unlimited (default). |
-| `multi-line` | bool | Multi-line (must be set before EnsureCreated; default true is fine — RichEdit is mostly used multi-line). |
-| `word-wrap` | bool | Word wrap. Also pre-Create. Default true. |
-| `text-color` | "r,g,b" | Default text color. Default RGB(30,30,30). |
-| `bg-color` | "r,g,b" | Background color. Default white. |
-| `auto-url-detect` | bool | Auto-detect URLs and underline them in blue. Default false. Once detected, clicking the URL fires `DUIN_RE_LINKCLICK`. |
-| `margins` | "l,t,r,b" | EDIT inner margins. Default 4,2,4,2. |
+| `show-border` | bool | Draw a 1px border. Default true. Set false to blend into the parent background. |
+| `focusable` | bool | Accept keyboard focus. Default true. Set false for display-only areas, otherwise focus lands there as soon as the window shows. |
+| `paste-plain` | bool | Whether Ctrl+V pastes plain text only by default. Default false. |
+| `drag-drop` | bool | Allow dragging text in and out. Default true. |
+| `context-menu` | bool | Show the built-in context menu on right-click. Default true. |
+| `v-scroll` / `h-scroll` | `auto`｜`always`｜`never` | Scrollbar policy. Default `auto` (appears only when the content overflows, fades out ~0.8s after scrolling stops). Scrollbars are **overlay** — they never take width away from the content. `never` only removes the draggable thumb; wheel and keyboard scrolling still work. |
+| `auto-grow` | bool | Grow with content. Default true. For this to take effect the parent's layout hint must be the **auto** mode (`Hint().Auto()`); a fixed height overrides it. |
+| `auto-grow-min` / `auto-grow-max` | int (px) | Auto-grow bounds. Min <= 0 means one line height; max <= 0 means unbounded (once the cap is hit the control stops growing and shows a scrollbar instead). |
+| `auto-grow-lines` | "min,max" | Convenience form expressed in lines, converted using the current default font's line height. **Wins over the pixel form when both are present.** The conversion is approximate when mixed font sizes are involved — use the pixel form there. |
 
-**Events**: the 3 events from `<edit>` plus `DUIN_RE_LINKCLICK` (fires on URL click when `auto-url-detect=true`; `extra` is an `ENLINK*`).
+**Events**: `DUIN_VALUECHANGED` (content changed), `DUIN_SETFOCUS` / `DUIN_KILLFOCUS`, `DUIN_RICHTEXT_MENUCOMMAND` (user picked a custom context-menu item; `extra` is that item's id).
 
-Rich-text / RTF / image / blockquote insertion requires calling specific C++ methods; XML does not expose them. EnsureCreated works the same as `<edit>`.
+**No EnsureCreated needed** — this control has no child window and is usable right after construction.
 
 <a id="xml-searchbox"></a>
 
@@ -480,7 +491,7 @@ Rich-text / RTF / image / blockquote insertion requires calling specific C++ met
 
 **Event**: `DUIN_VALUECHANGED` — fires on text change or when × clears the field.
 
-EnsureCreated works the same as `<edit>` (searchbox embeds a `DuiEditHost` child).
+**No EnsureCreated needed** (this control *is* a `DuiEdit`, same as `<edit>`).
 
 <a id="xml-spinbox"></a>
 
@@ -496,7 +507,7 @@ EnsureCreated works the same as `<edit>` (searchbox embeds a `DuiEditHost` child
 
 **Event**: `DUIN_VALUECHANGED` (`extra` = new value) — fires on ▲▼ click. To commit user-typed text from the EDIT, the caller should hook `DUIN_KILLFOCUS` and do `SetValue(_ttoi(GetEdit()->GetText()))`.
 
-EnsureCreated works the same as `<edit>` (spinbox embeds a `DuiEditHost` child).
+**No EnsureCreated needed** (spinbox embeds a `DuiEdit` child, same as `<edit>`).
 
 <a id="xml-treeview"></a>
 
@@ -537,31 +548,29 @@ XML only declares columns; nodes (`AddRoot` / `AddChild`) must be added from C++
 
 <a id="xml-ensure-created"></a>
 
-### 3.4 EnsureCreated convention for HWND-hosted controls
+### 3.4 The EnsureCreated convention is retired
 
-The 4 HWND-category tags (`<edit>` / `<richedit>` / `<searchbox>` / `<spinbox>`) embed a real EDIT/RICHEDIT child HWND. Those HWNDs need an <u>already-created parent HWND</u> to `CreateWindow` against; during XML parsing the control isn't attached to a host yet, so the builder **does not** create the child HWNDs proactively.
+Before 2026-08-17, the 4 text-input tags (`<edit>` / `<searchbox>` / `<spinbox>` / `<combobox>`) embedded a real Win32 text box child window. Such a child window needs an <u>already-created parent window</u> before it can be created, and during XML parsing the control is not attached to a host yet, so the builder never created them proactively — the caller had to call `EnsureCreated(hostHwnd)` once the host had a real window.
 
-The correct wiring order:
+Now that the text box is windowless ([DuiEdit](#DuiEdit)), **the whole convention is retired**:
 
-1. `FromString(xml)` returns the root (the control tree is built, but HWND-category controls are still <u>bare DUI controls</u>).
-2. `host.SetRoot(std::move(root))` or `frame.SetClientContent(...)` — attach the tree to the host.
-3. The host must already be `Create(...)`'d, so `m_hWnd` is valid.
-4. Walk the root, find every HWND-category control, and call `EnsureCreated(host.m_hWnd)` on each. You can use `FindChildById(id)` to fetch a pointer, or write your own visitor.
+- Whatever the builder produces is **ready to use right after construction** — you can set text, measure it and change its properties immediately, with no window involved.
+- The correct wiring order is only two steps now: `FromString(xml)` to get the root, then `host.SetRoot(std::move(root))` or `frame.SetClientContent(...)` to attach it. There is no third step.
+- The compatibility shell `DuiEditHost` still carries an `EnsureCreated`, but it is an **empty implementation that always returns success**, kept purely so existing call sites still compile unchanged. New code must not call it; existing call sites can be deleted in place, in any order.
+- `GetHostedHwnd`, which returned the internal child window handle, has been **removed**. A windowless control has no meaningful value to return, and leaving it in place returning a null handle would make every call site fail silently at run time. Removing it turns those places into compile errors instead, so each one can be rewritten the windowless way: `SetFocus` to take focus, `SelectAll` to select everything, `IsFocused` to test focus.
 
 ```
 auto root = balloonwjui::DuiXmlBuilder::FromString(xml);
-host.SetRoot(std::move(root));               // host must already be Create'd
+host.SetRoot(std::move(root));
 
-// Locate the edit with id=100 and materialize its real HWND
-auto* edit = static_cast<balloonwjui::DuiEditHost*>(
+// Locate the edit with id=100 and use it directly — there is no "create" step
+auto* edit = static_cast<balloonwjui::DuiEdit*>(
     host.GetRoot()->FindControlById(100));
 if (edit)
 {
-    edit->EnsureCreated(host.m_hWnd);
+    edit->SetText(_T("hello"));
 }
 ```
-
-HWND-category controls without `EnsureCreated` won't crash, but the <u>real EDIT control won't appear</u> (it stays a bare DUI node with placeholder drawing), and the user can't type into it.
 
 <a id="xml-comments"></a>
 
@@ -624,7 +633,7 @@ Every control comes with its default style baked into the constructor — Micros
 - Font: **Microsoft YaHei 9 pt** (GB2312) — provided by `DuiResMgr`
 - Corner radius: button 8 px, bubble 8 px, chip 9–11 px
 - Brand colors: `#2D6CDF` (blue), `#4CC7A1` (green — default for DuiAvatar / DuiBadge)
-- I-beam cursor appears automatically over EditHost / RichEditHost
+- I-beam cursor appears automatically over DuiEdit / DuiRichEdit
 - All non-axis-aligned shapes (circles, diagonals, polygons) are drawn with anti-aliasing via `DuiPaintAA`
 
 <a id="class-hierarchy"></a>
@@ -639,10 +648,6 @@ Every "logical control" (no HWND, participates only in paint / hit-test / event)
 
 ```
 DuiControl                      // Logical-node base (no HWND)
-│
-├── HwndHostControl            // Adapter that embeds a real HWND
-│   ├── DuiEditHost              // Real EDIT, IME-friendly
-│   └── DuiRichEditHost          // Real RICHEDIT_CLASS
 │
 ├── DuiLayout                  // Abstract container base
 │   ├── DuiVBox                  // Vertical box
@@ -662,8 +667,11 @@ DuiControl                      // Logical-node base (no HWND)
 ├── DuiGroupBox                  // Titled group box
 │
 ├── // — Input —
-├── DuiSearchBox                 // M7+: now inherits from DuiEditHost as a thin preset
-├── DuiSpinBox                   // Embeds an EDIT by aggregation (not inheritance)
+├── DuiRichEdit                  // Windowless rich text, on the system text services
+│   └── DuiEdit                  // Windowless plain text box (single-/multi-line)
+│       └── DuiEditHost          // Compatibility shell, equivalent to DuiEdit
+│           └── DuiSearchBox     // A text box preloaded with magnifier + clear button
+├── DuiSpinBox                   // Embeds a text box by aggregation (not inheritance)
 ├── DuiSlider                    // Horizontal/vertical slider
 ├── DuiSwitch                    // iOS-style rounded pill switch (150 ms animation)
 ├── DuiProgressBar               // Progress bar
@@ -686,7 +694,9 @@ DuiControl                      // Logical-node base (no HWND)
     └── DuiScrollView            // Built-in scroll container
 ```
 
-**Note**: `DuiSpinBox` embeds a real EDIT, but does so by <u>aggregation</u> (it does not inherit from HwndHostControl) — for the DUI parts (the up/down triangles), aggregation reads cleaner. `DuiSearchBox` originally did the same, but as of M7+ it has been refactored to <u>inherit from DuiEditHost</u> as a thin preset — once DuiEditHost grew a [native left/right inline-icon API](#DuiEditHost-IconApi), the magnifier / × could be installed as icons directly, which is leaner than reimplementing paint / Layout / HitTest.
+**Note**: `DuiSpinBox` embeds a text box, but does so by <u>aggregation</u> (it holds a child control rather than inheriting) — its custom-drawn up/down triangles sit beside the text box, so aggregation reads cleaner. `DuiSearchBox` originally did the same, but was later refactored to <u>inherit</u> from the text box — once the text box grew a [left/right inline-icon API](#DuiEdit-IconApi), the magnifier and clear button could be installed as icons directly, which is far leaner than reimplementing paint, layout and hit-testing.
+
+**About `DuiEditHost`**: this class name used to denote a control that embedded a real Win32 text box child window. Once the text box went windowless on 2026-08-17, it degenerated into a thin compatibility shell over `DuiEdit`, adding only a placeholder-visibility switch, so that the several hundred existing call sites across the two applications keep compiling unchanged. **New code should always use `DuiEdit` directly.**
 
 ### 5.2 Real-window chain — the `DuiHost` family
 
@@ -967,7 +977,7 @@ The table below shows which controls fire events vs. which are purely render/con
 
 | Event-firing controls | No events (render-only / container / engine) |
 | --- | --- |
-| DuiButton, DuiLabel (link mode), DuiEditHost, DuiRichEditHost, DuiSearchBox, DuiSpinBox, DuiSlider, DuiProgressBar, DuiComboBox, DuiListBox, DuiTreeView, DuiTab, DuiTabPage, DuiSplitter, DuiScrollBar, DuiEmojiPanel, DuiMenu | DuiVBox / DuiHBox / DuiGrid / DuiDock / DuiTabPage*container, DuiBadge, DuiAvatar, DuiSeparator, DuiGroupBox, DuiGifControl, DuiImageOle, DuiHost, DuiFrameWindow*shell, DuiPopupHost*shell, DuiToolTipMgr, DuiResMgr, DuiDpi, DuiPaintAA, DuiTheme, DuiNotify |
+| DuiButton, DuiLabel (link mode), DuiEdit, DuiRichEdit, DuiSearchBox, DuiSpinBox, DuiSlider, DuiProgressBar, DuiComboBox, DuiListBox, DuiTreeView, DuiTab, DuiTabPage, DuiSplitter, DuiScrollBar, DuiEmojiPanel, DuiMenu | DuiVBox / DuiHBox / DuiGrid / DuiDock / DuiTabPage*container, DuiBadge, DuiAvatar, DuiSeparator, DuiGroupBox, DuiGifControl, DuiImageOle, DuiHost, DuiFrameWindow*shell, DuiPopupHost*shell, DuiToolTipMgr, DuiResMgr, DuiDpi, DuiPaintAA, DuiTheme, DuiNotify |
 
 <a id="control-catalog"></a>
 
@@ -995,9 +1005,9 @@ DuiSeparator
 
 DuiGroupBox
 
-DuiEditHost
+DuiEdit
 
-DuiRichEditHost
+DuiRichEdit
 
 DuiSearchBox
 
@@ -1050,7 +1060,7 @@ HWND (top-level window / a region inside a legacy dialog)
    │
    └─ Layout container (DuiVBox / DuiHBox / DuiGrid / DuiSplitter / DuiGroupBox / DuiDock)
       ├─ Leaf controls (DuiButton / DuiLabel / DuiAvatar / DuiSlider / ...)
-      ├─ HWND-hosted controls (DuiEditHost / DuiRichEditHost / DuiSearchBox / DuiSpinBox) + EnsureCreated
+      ├─ Text input (DuiEdit / DuiRichEdit / DuiSearchBox / DuiSpinBox)
       ├─ Lists / Tabs (DuiListBox / DuiTreeView / DuiTab + DuiTabPage)
       └─ Nested layout containers (VBox holding HBox holding Grid ...)
 ```
@@ -1119,7 +1129,7 @@ host.SetRoot(std::move(root));            // entry ① — via host.SetRoot
 // or popup.SetContent(std::move(root));         // entry ③ — via popup.SetContent
 ```
 
-**EnsureCreated for HWND-hosted controls**: `DuiEditHost` / `DuiRichEditHost` / `DuiSearchBox` / `DuiSpinBox` each embed a real EDIT/RICHEDIT child HWND. After `host.Create` (i.e. once a real HWND exists), call `EnsureCreated(host.m_hWnd)` on each hosted control. See [§3.4](#xml-ensure-created).
+**Text boxes need no extra creation step**: `DuiEdit` / `DuiRichEdit` / `DuiSearchBox` / `DuiSpinBox` / `DuiComboBox` are all windowless controls — attach them to the tree and they work. Before 2026-08-17 they embedded a real Win32 child window and each needed an `EnsureCreated(host.m_hWnd)` call after `host.Create`; that step is now gone. See [§3.4](#xml-ensure-created).
 
 ## 7.1 Layout containers
 
@@ -1997,31 +2007,43 @@ host.SetRoot(std::move(root));
 
 ## 7.3 Input
 
-<a id="DuiEditHost"></a>
+<a id="DuiEdit"></a>
 
-### DuiEditHost  `[HWND-hosted]`
+### DuiEdit  `[Pure DUI]`
 
-![DuiEditHost 4 states](images/ctl-edit-states.png)
+![DuiEdit 4 states](images/ctl-edit-states.png)
 
-*Left → right: placeholder (empty) / filled / focused / disabled. Off-screen snapshots may clip the EDIT text, but the actual runtime is fine.*
+*Left → right: placeholder (empty) / filled / focused / disabled.*
 
-Plain-text single-/multi-line edit control. **Because IME input is required**, it embeds a real EDIT HWND internally (via the `HwndHostControl` adapter).
+Plain-text single-/multi-line text box with **no window of its own**. It is a subclass of [DuiRichEdit](#DuiRichEdit): layout, caret, selection, IME, clipboard and context menu all come from the base class (which drives the rich-text layout engine that ships with Windows). This class only adds the semantics a plain text box has on top of a rich text box — Enter does not insert a line break in single-line mode, inline icon gutters on the left and right, a reveal toggle for password fields, and vertical centering of single-line text.
 
-**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). <u>After attaching, you still need to call</u> `edit->EnsureCreated(host.m_hWnd)` once the host HWND is ready, before the child EDIT HWND is actually created (see [§3.4](#xml-ensure-created)).
+**`DuiEditHost` is the retained compatibility name.** That class name used to denote a control that embedded a real Win32 text box child window; once the text box went windowless on 2026-08-17, it degenerated into a thin shell over `DuiEdit` (adding only a placeholder-visibility switch) so that existing call sites keep compiling unchanged. The two are the same control, and everything in this section applies to both. **New code should always use `DuiEdit` directly.**
+
+#### What going windowless changed
+
+| Capability | Why it holds |
+| --- | --- |
+| Can be overlapped by other controls, and can live inside a scroll container / tab page / popup | With no child window, the parent's clipping and z-order apply to it as usual |
+| Supports rounded corners and translucent backgrounds, and can be animated along with the layout | The fill and border are painted by the control itself, no longer constrained by how the system text box draws |
+| Password / multi-line / read-only / word-wrap can be toggled at any time at run time | In a windowless design these are just property bits that take effect immediately; in the old design they were window style bits fixed at creation time, so changing one meant destroying and rebuilding the whole child window |
+| Many instances can live in one window | It consumes no window handles |
+| No `EnsureCreated` needed | The text engine does not depend on any window; it is set up in the constructor, so the control can take text and be measured immediately |
+
+**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). Attach it and it works — there is no extra creation step.
 
 #### Code-based creation
 
 ```
-auto edit = std::make_unique<balloonwjui::DuiEditHost>();
+auto edit = std::unique_ptr<balloonwjui::DuiEdit>(new balloonwjui::DuiEdit());
 edit->SetCtrlId(100);
 edit->SetPlaceholder(_T("Enter username"));
 edit->SetMultiLine(false);
 edit->SetPassword(false);
-balloonwjui::DuiEditHost* editRaw = edit.get();
+edit->SetMaxLength(32);
+balloonwjui::DuiEdit* editRaw = edit.get();
 vbox->AddChild(std::move(edit), balloonwjui::DuiLayout::Hint().Fixed(28));
 
-// Call once after host.Create(...):
-editRaw->EnsureCreated(host.m_hWnd);
+editRaw->SetText(_T("hello"));   // no "create" call needed
 ```
 
 #### XML-based creation
@@ -2035,31 +2057,39 @@ editRaw->EnsureCreated(host.m_hWnd);
 ```
 
 ```
-// caller side (note EnsureCreated):
+// caller side: attaching is all there is to it
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-// Once the host HWND is ready, call EnsureCreated once on each <edit> node:
-for (UINT id : { 100u, 101u, 102u }) {
-    if (auto* e = static_cast<balloonwjui::DuiEditHost*>(host.GetRoot()->FindControlById(id)))
-        e->EnsureCreated(host.m_hWnd);
-}
+
+auto* e = static_cast<balloonwjui::DuiEdit*>(host.GetRoot()->FindControlById(100));
+e->SetText(_T("balloonwj"));
 ```
 
 |   |   |
 | --- | --- |
-| `SetText / GetText` | Text content (synced with the EDIT). |
+| `SetText / GetText` | Text content. `SetText` fires a `DUIN_VALUECHANGED`. |
+| `SetTextNoNotify` | Sets the text without firing a notification. Use it for programmatic write-backs, to avoid triggering business logic that should not run. |
 | `SetPlaceholder` | Gray hint shown when the field is empty. |
-| `SetPassword(bool)` | Password mode (shows *). |
-| `SetMultiLine(bool)` | Multi-line. |
-| `SetReadOnly / SetMaxLength` | Read-only / length limit. |
+| `SetPassword(bool)` | Password mode (content shown as mask characters). <u>Can be changed at any time</u>, with no rebuild. |
+| `SetShowEyeToggle(bool)` / `SetPasswordRevealed(bool)` | Whether the reveal toggle is shown on the right / whether the password is currently in clear text. Meaningful only in password mode. |
+| `SetMultiLine(bool)` | Multi-line. <u>Can be changed at any time.</u> |
+| `SetReadOnly / SetMaxLength` | Read-only / length limit. <u>Both can be changed at any time.</u> |
+| `SetVerticalCenter(bool)` | Whether single-line text is vertically centered within the control height. Default true; no effect in multi-line mode. |
+| `SetBgColor` / `SetShowBorder` | Overall background fill / whether to draw the 1 px border. |
+| `SetCtlFont(family, sizePx, ...)` | Sets the control font by family name and pixel size. |
+| `SetNotificationsSuppressed(bool)` | Suppresses *every* notification this control sends out. Used by composite controls such as the combo box and spin box to silence their embedded text box. |
 
 #### Events
 
 | code | When it fires | extra (LPARAM) |
 | --- | --- | --- |
-| `DUIN_VALUECHANGED` | EDIT content changed (responds to every `EN_CHANGE` — IME committing each character, clipboard paste, user typing). Call `GetText()` in the handler to read the latest value. | 0 |
-| `DUIN_SETFOCUS` | EDIT received keyboard focus (`EN_SETFOCUS`). | 0 |
-| `DUIN_KILLFOCUS` | EDIT lost focus (`EN_KILLFOCUS`); good place for "commit / validate / clear placeholder state." | 0 |
+| `DUIN_VALUECHANGED` | Text changed — typing, the IME committing each character, clipboard paste, <u>and a programmatic `SetText`</u>. Call `GetText()` in the handler to read the latest value. This <u>differs from the base class `DuiRichEdit`</u>, which fires only on user edits and stays silent on programmatic writes. This control deliberately keeps the old text box behavior, because existing application code relies in several places on "a programmatic write also notifies" (for example, the search box relies on it to re-filter the list after its clear button is clicked). When you genuinely need to set text without notifying, use `SetTextNoNotify`. | 0 |
+| `DUIN_SETFOCUS` | Gained keyboard focus. | 0 |
+| `DUIN_KILLFOCUS` | Lost keyboard focus; a good place to commit or validate. | 0 |
+| `DUIN_EDIT_ENTER` <small>(= `DUIN_CUSTOM + 83`)</small> | Enter pressed in single-line mode. Not fired in multi-line mode, where Enter inserts a line break. The host window typically performs its "OK" action. | 0 |
+| `DUIN_EDIT_ESCAPE` <small>(= `DUIN_CUSTOM + 84`)</small> | Esc pressed (fired in both single- and multi-line mode). The host window typically performs its "cancel" action, such as dismissing a popup or leaving inline edit mode. | 0 |
+
+**Always test `ctrlId` alongside `code` when dispatching.** Custom notification codes in this library are numbered <u>per control</u>: every control starts counting from `DUIN_CUSTOM`, so the first custom code of two different controls necessarily has the same value. `DuiEdit` deliberately opens its range at `DUIN_CUSTOM + 80`, away from the `+1` slot that a dozen controls already share, but that is only a mitigation — the host window's branch condition must still compare both `code` and `ctrlId`. Otherwise an identically valued notification from another control gets swallowed by whichever branch was written first, and the symptom is "clicking does nothing" with no error and no crash.
 
 Common form pattern: validate live in `DUIN_VALUECHANGED` and disable the submit button accordingly; persist the temporary input to the model in `DUIN_KILLFOCUS`.
 
@@ -2079,7 +2109,7 @@ if (n->ctrlId == IDC_NICKNAME) {
 }
 ```
 
-**EnsureCreated convention**: DuiEditHost embeds a real EDIT HWND; you must call `edit->EnsureCreated(host->m_hWnd)` once after the host HWND is ready before it's actually created. On the XML path the builder does <u>not</u> do this for you; the caller must use `FindControlById` to find the node and call it. See [§3.4 EnsureCreated convention](#xml-ensure-created).
+**No EnsureCreated needed** — this control has no child window, so it is usable right after construction on both the code and XML paths. That convention existed before 2026-08-17 and is now retired; see [§3.4](#xml-ensure-created).
 
 #### XML quick reference
 
@@ -2087,13 +2117,13 @@ if (n->ctrlId == IDC_NICKNAME) {
 | --- | --- |
 | Tag | `<edit id="..." placeholder="..." password="false" multiline="false"/>` |
 | Detailed attribute reference | [§3.3.12 edit](#xml-edit) |
-| Events | `DUIN_VALUECHANGED` / `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` |
+| Events | `DUIN_VALUECHANGED` / `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` / `DUIN_EDIT_ENTER` / `DUIN_EDIT_ESCAPE` / `DUIN_EDIT_LEFT_ICON_CLICK` / `DUIN_EDIT_RIGHT_ICON_CLICK` |
 
-<a id="DuiEditHost-IconApi"></a>
+<a id="DuiEdit-IconApi"></a>
 
-#### Inline icons + background + border (all off by default, zero regression)
+#### Inline icons + background + border (all off by default)
 
-You can drop icons into the EDIT's left / right gutter; common uses: magnifier on the left of a search box, `@` on the left of an email field, 👁 on the right of a password field. The EDIT text area <u>automatically avoids the gutter</u> (Layout shrinks the EDIT HWND by the gutter width), so text never overlaps the icon. Combined with `SetBgColor` (so the EDIT background blends into the container's rounded gray fill) and `SetShowBorder(false)` (to drop the default 1 px border), this produces "icons floating inside a pill-shaped gray fill with no visible EDIT boundary."
+The text box can reserve a fixed-width strip on its left and right for icons; common uses: a magnifier on the left of a search box, `@` on the left of an email field, a reveal toggle on the right of a password field. The text area <u>automatically avoids those strips</u> (the control adds the icon widths to the insets it hands to the layout engine), so text never overlaps an icon. Combined with `SetBgColor` (so the fill blends into the container's rounded gray background) and `SetShowBorder(false)` (to drop the default 1 px border), this produces "icons floating inside a rounded gray fill with no visible text-box boundary."
 
 **Style illustration** (left: default; middle: left magnifier + gray fill, borderless; right: right × clear):
 
@@ -2115,38 +2145,43 @@ You can drop icons into the EDIT's left / right gutter; common uses: magnifier o
       <line x1="628" y1="15" x2="618" y2="25" stroke="#8C8C8C" stroke-width="1.5" stroke-linecap="round"></line>
     </svg>
 
-*Three typical uses of the EDIT's inline icons. The middle and right images are both the same DuiEditHost instance, configured via `SetIcon(LeftIcon, ...)` and `SetIcon(RightIcon, ...)` respectively.*
+*Three typical uses of the inline icons. The middle and right images are both the same `DuiEdit` instance, configured via `SetIcon(LeftIcon, ...)` and `SetIcon(RightIcon, ...)` respectively.*
 
 ##### API
 
 |   |   |
 | --- | --- |
-| `SetIcon(slot, gutterW, painter)` | Core API. `slot` = `LeftIcon` / `RightIcon`; `gutterW` is the icon's px width (0 = remove); `painter` is a `std::function<void(HDC, const RECT&)>` in which the caller draws the icon into the given RECT using any GDI / GDI+ API. |
-| `SetIconBitmap(slot, gutterW, hbm)` | Convenience overload: use an HBITMAP as the icon. The caller owns the HBITMAP. The internal painter centers it inside the RECT via BitBlt (no scaling). |
-| `SetIconGlyph(slot, gutterW, glyph, color)` | Convenience overload: use a Unicode character as the icon, drawn centered with the default font (Microsoft YaHei 9 pt). Common choices: `_T("🔍")` / `_T("@")`. |
-| `ClearIcon(slot)` | Equivalent to `SetIcon(slot, 0, nullptr)` — the gutter collapses and the text area expands. |
-| `SetIconClickable(slot, b)` | Default `false` (the icon is decorative; clicks pass through to set the EDIT caret). When `true`, clicks inside the gutter are consumed by this control and fire `DUIEN_LEFT_ICON_CLICK` / `DUIEN_RIGHT_ICON_CLICK` to the parent host. |
-| `SetBgColor(c)` | Controls both (1) the background color the DUI side fills in the margin around the EDIT during OnPaint, and (2) the Win32 EDIT control's own background (propagated through WM_CTLCOLOREDIT into `HwndHostControl::SetCtlBgColor`). Default `RGB(255,255,255)`. |
-| `SetShowBorder(b)` | Whether to draw the 1 px border. Default `true`. Turn off when embedding the EDIT inside a container that already has rounded corners (e.g. a pill-shaped SearchBox), so the EDIT's square border doesn't clash with the container's rounded outline. |
+| `SetIcon(slot, gutterW, painter)` | Core API. `slot` = `LeftIcon` / `RightIcon`; `gutterW` is the px width reserved on that side (0 = remove); `painter` is a `std::function<void(HDC, const RECT&)>` in which the caller draws the icon into the given RECT using any GDI / GDI+ API. If the callback changes any HDC state, it must restore it itself. |
+| `SetIconBitmap(slot, gutterW, hbm)` | Convenience overload: use an HBITMAP as the icon. The caller keeps ownership; this control neither copies nor destroys it. Centered inside the RECT via BitBlt (no scaling, no transparency handling). |
+| `SetIconGlyph(slot, gutterW, glyph, color)` | Convenience overload: use a short piece of text (usually one symbol character) as the icon, drawn centered. |
+| `ClearIcon(slot)` | Removes the icon on that side; the reserved width goes back to the text area. |
+| `GetIconWidth(slot)` | The px width the icon on that side currently occupies; 0 when there is none. |
+| `SetIconClickable(slot, b)` | Default `false` (the icon is decorative; clicks pass through to the text area to position the caret). When `true`, clicks on that side are consumed by this control, the cursor turns into a hand, and `DUIN_EDIT_LEFT_ICON_CLICK` / `DUIN_EDIT_RIGHT_ICON_CLICK` is sent to the host window. |
+| `SetIconDragHandler(slot, handler)` | Hands mouse input on that side over to a callback: once installed, that side no longer fires click notifications, and button-down / move / button-up are passed through verbatim. Typical use: custom-drawing a draggable scrollbar inside the icon gutter. |
+| `ComputeIconRect(rc, slot, gutterW, borderPx, marginVPx)` | Static pure function that computes the icon rectangle by the same rules, so callers can align their own drawing and hit regions. Does not depend on control state. |
+| `SetBgColor(c)` | Overall background fill. Default `RGB(255,255,255)`. Ignored while the control is disabled, which uses a fixed disabled fill instead. |
+| `SetShowBorder(b)` | Whether to draw the 1 px border. Default `true`. Turn it off when embedding the text box inside a container that already has rounded corners, so the square border does not clash with the rounded outline. |
 
 ##### Events
 
 | code | When it fires | extra |
 | --- | --- | --- |
-| `DUIEN_LEFT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 1`)</small> | After `SetIconClickable(LeftIcon, true)`, on a left-click inside the left gutter. | 0 |
-| `DUIEN_RIGHT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 2`)</small> | Same on the right. | 0 |
+| `DUIN_EDIT_LEFT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 81`)</small> | After `SetIconClickable(LeftIcon, true)`, on a left-button press inside that region. | 0 |
+| `DUIN_EDIT_RIGHT_ICON_CLICK` <small>(= `DUIN_CUSTOM + 82`)</small> | Same on the right. | 0 |
 
-**Interaction with the eye-toggle button (`SetShowEyeToggle`)**: the right icon and the password eye-toggle button share the right gutter. When `password=true` and `SetShowEyeToggle(true)`, `SetIcon(RightIcon, ...)`'s draw / hit-test on the right is ignored — the eye-toggle wins. The left icon is unaffected and can coexist with the eye-toggle.
+**The old notification names are kept as aliases**: `DuiEditHost::DUIEN_LEFT_ICON_CLICK` / `DUIEN_RIGHT_ICON_CLICK` forward to the two new codes with equal values. The numeric values did change (the new control opened its own range, away from the `DUIN_CUSTOM + 1` slot a dozen controls already share), but existing code compares the symbols rather than the literal numbers, so it is unaffected. New code should use the new names.
 
-##### Usage: search pill
+**Interaction with the password reveal toggle (`SetShowEyeToggle`)**: the right icon and the reveal toggle share the region on the right. When `password=true` and `SetShowEyeToggle(true)`, the right icon steps aside entirely — it is neither drawn nor hit-tested, and no right-icon click notification is fired. The left icon is unaffected and can coexist with the toggle.
+
+##### Usage: rounded search box
 
 ```
-// No need to subclass DuiEditHost — regular construction is enough:
-auto edit = std::make_unique<balloonwjui::DuiEditHost>();
+// No need to subclass DuiEdit — regular construction is enough:
+auto edit = std::unique_ptr<balloonwjui::DuiEdit>(new balloonwjui::DuiEdit());
 edit->SetPlaceholder(_T("Search music, videos, podcasts..."));
-edit->SetBgColor(RGB(0xF3, 0xF3, 0xF4));   // Match the outer pill gray fill
+edit->SetBgColor(RGB(0xF3, 0xF3, 0xF4));   // Match the outer container's gray fill
 edit->SetShowBorder(false);                // Drop the 1 px border
-edit->SetIcon(balloonwjui::DuiEditHost::LeftIcon, 32,
+edit->SetIcon(balloonwjui::DuiEdit::LeftIcon, 32,
     [](HDC hdc, const RECT& rc) {
         int gx = (rc.left + rc.right) / 2;
         int gy = (rc.top + rc.bottom) / 2;
@@ -2157,117 +2192,124 @@ edit->SetIcon(balloonwjui::DuiEditHost::LeftIcon, 32,
         balloonwjui::DuiAA::DrawLine(hdc, gx + 3, gy + 3, gx + 7, gy + 7,
                                       c, 1.5f);
     });
-// The outer container paints the rounded pill gray fill itself (see PaintHelpers::FillRoundedRect)
+// The outer container paints the rounded gray fill itself (see PaintHelpers::FillRoundedRect)
 ```
 
-##### Usage: clickable × clear
+##### Usage: clickable clear button
 
 ```
-edit->SetIconGlyph(balloonwjui::DuiEditHost::RightIcon, 24,
+edit->SetIconGlyph(balloonwjui::DuiEdit::RightIcon, 24,
                     _T("✕"), RGB(140, 140, 140));
-edit->SetIconClickable(balloonwjui::DuiEditHost::RightIcon, true);
+edit->SetIconClickable(balloonwjui::DuiEdit::RightIcon, true);
 
-// Routing in the parent dialog's OnDuiNotify:
+// Routing in the parent dialog's OnDuiNotify
+// (code and ctrlId must sit in the same branch condition):
 auto* n = (balloonwjui::DuiNotify*)lp;
-if (n->ctrlId == IDC_SEARCH
-    && n->code == balloonwjui::DuiEditHost::DUIEN_RIGHT_ICON_CLICK)
+if (n->code == balloonwjui::DuiEdit::DUIN_EDIT_RIGHT_ICON_CLICK
+    && n->ctrlId == IDC_SEARCH)
 {
     edit->SetText(_T(""));    // Clear
 }
 ```
 
-<a id="DuiRichEditHost"></a>
+<a id="DuiRichEdit"></a>
 
-### DuiRichEditHost  `[HWND-hosted]`
+### DuiRichEdit  `[pure DUI]`
 
-![DuiRichEditHost border preview](images/ctl-richedit-styles.png)
+![DuiRichEdit basic form](images/ctl-richtext-basic.png)
 
-*RichEdit chrome (with border). For the runtime rich-text appearance, see the RTF demo page.*
+*Windowless rich text control. Shown: plain editing state; see also the placeholder and overlay-scrollbar shots.*
 
-Rich-text editor (built on `RICHEDIT_CLASS`). Supports:
+Drives the **system rich-text engine** (text services) directly, so text behaviour, RTF format and link detection match the OS rich-text control. This control has **no window of its own**, however: the engine paints into the host's drawing target, so for layout and painting purposes it behaves like any other pure DUI control.
 
-- RTF serialization: `SaveRTF/LoadRTF` + plain-text `SaveText/LoadText`.
-- Paste filtering: `SetPasteAsPlainTextDefault(true)` or `PasteAsPlainText()`.
-- Find: `FindText / FindAndSelect` (forward/backward, case-sensitive, whole-word, wrap-around).
-- OLE image insertion (paired with `DuiImageOle`).
+#### What it gives you
 
-**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). <u>After attaching you must still call</u> `re->EnsureCreated(host.m_hWnd)` once the host HWND is ready. `multi-line` / `word-wrap` / `password` must be set before EnsureCreated (baked-in style); changing them later requires destroying and recreating the HWND.
+| Capability | Why it holds |
+| --- | --- |
+| Can be overlapped, and can live inside a scroll container / tab / popup | No child window, so parent clipping and z-order apply normally |
+| Rounded corners, translucency, gradient background, layout animation | The engine officially supports a transparent background; the control paints its own |
+| Grows with its content (chat input box) | The control can read the engine's layout result and report the desired height |
+| Many instances in one window | Consumes no window handles |
+| Multi-line / read-only / word-wrap can be toggled at runtime | In the windowless design these are property bits that take effect immediately — nothing is destroyed and recreated |
 
-#### Code-based creation
+**Typical parent:** any layout container. **No EnsureCreated** — the text engine does not depend on any window, so it is created in the constructor and the control is usable immediately.
+
+#### Creating in code
 
 ```
-auto re = std::make_unique<balloonwjui::DuiRichEditHost>();
-re->SetMultiLine(true);
-re->SetPasteAsPlainTextDefault(true);   // Ctrl+V auto-pastes plain text only
-re->LoadText(_T("Default content..."));
-balloonwjui::DuiRichEditHost* reRaw = re.get();
-vbox->AddChild(std::move(re), balloonwjui::DuiLayout::Hint().Weight(1));
-
-// Call once after host.Create(...):
-reRaw->EnsureCreated(host.m_hWnd);
-
-// Find
-CHARRANGE r;
-if (reRaw->FindAndSelect(_T("foo"), 0, /*forward*/true,
-                          /*caseSensitive*/false, /*wholeWord*/false,
-                          /*wrap*/true)) { /* selected */ }
-
-// Persist
-CStringA rtf;
-reRaw->SaveRTF(rtf);    // with formatting
-CString plain;
-reRaw->SaveText(plain); // plain text
+auto rt = std::unique_ptr<balloonwjui::DuiRichEdit>(new balloonwjui::DuiRichEdit());
+rt->SetMultiLine(true);
+rt->SetWordWrap(true);
+rt->SetPlaceholder(_T("Type a message..."));
+balloonwjui::DuiRichEdit* raw = rt.get();
+vbox->AddChild(std::move(rt), balloonwjui::DuiLayout::Hint().Weight(1));
+raw->SetText(_T("hello"));   // no "create" call required
 ```
 
-#### XML-based creation
+#### Auto-grow (the chat input box pattern)
+
+The key point is that **both sides must be configured**: enable auto-grow with bounds on the control, and give the parent an **auto** layout hint. Configuring only one side does nothing — a fixed-height hint means the reported desired height is never honoured.
+
+```
+auto rt = std::unique_ptr<balloonwjui::DuiRichEdit>(new balloonwjui::DuiRichEdit());
+rt->SetMultiLine(true);
+rt->SetWordWrap(true);
+rt->SetAutoGrowLines(1, 5);          // one line minimum, five maximum, then scroll
+// The crucial half: an auto hint, not Fixed
+inputRow->AddChild(std::move(rt), balloonwjui::DuiLayout::Hint().Auto());
+```
+
+#### Context menu
+
+A full menu comes for free: in read-write mode undo / redo / (separator) / cut / copy / paste / paste as plain text / delete / (separator) / select all; in read-only mode just copy and select all, each item greyed out according to the current state. Both the right mouse button and the keyboard Menu key (`Shift+F10`) open it. Customisation comes in three layers — pick the cheapest one that covers your need:
+
+```
+// Layer 1 — just append a few items. No subclass needed.
+// Ids must be >= kRichEditMenuCustomBase (1000); lower ids would collide with the
+// built-in commands, so the control rejects them.
+rt->AppendContextMenuItem(kCmdInsertEmoji, _T("Insert emoji"));
+// When picked, the control fires DUIN_RICHTEXT_MENUCOMMAND with the id in extra.
+
+// Layer 2 — change the default items (remove / rename / disable). Subclass and override:
+void MyEdit::OnBuildContextMenu(std::vector<balloonwjui::DuiRichEditMenuItem>& items)
+{
+    DuiRichEdit::OnBuildContextMenu(items);   // start from the default menu
+    // ... edit items freely; separators are normalised by the control before popping ...
+}
+
+// Layer 3 — take over completely: same virtual, do not call the base, fill from empty.
+// Or rt->SetContextMenuEnabled(false) and pop whatever you like from OnRButtonDown.
+```
+
+#### Creating from XML
 
 ```
 <vbox padding="8">
-    <richedit id="300" multi-line="true" word-wrap="true" auto-url-detect="true" weight="1"/>
+    <richtext id="300" multi-line="true" word-wrap="true"
+              placeholder="Type a message..." auto-grow-lines="1,5" weight="1"/>
 </vbox>
-```
-
-```
-// caller side:
-auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
-host.SetRoot(std::move(root));
-// Call EnsureCreated once after the host HWND is ready:
-if (auto* re = static_cast<balloonwjui::DuiRichEditHost*>(host.GetRoot()->FindControlById(300)))
-    re->EnsureCreated(host.m_hWnd);
 ```
 
 #### Events
 
-| code | When it fires | extra (LPARAM) |
+| code | Fires when | extra (LPARAM) |
 | --- | --- | --- |
-| `DUIN_VALUECHANGED` | RichEdit content changed (every `EN_CHANGE`). | 0 |
-| `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` | Focus in / out. | 0 |
-| `DUIN_RE_LINKCLICK` | User clicks an auto-detected URL (needs `SetAutoUrlDetect(true)` first). `EN_LINK` is auto-forwarded as this notification. | The original `EN_LINK`'s `lParam` (points to an `ENLINK`; provides position / text). |
-
-```
-// In the parent dialog:
-auto* n = (balloonwjui::DuiNotify*)lp;
-if (n->ctrlId == IDC_RE && n->code == DUIN_RE_LINKCLICK) {
-    auto* el = (ENLINK*)n->extra;
-    CString url = re->GetTextRange(el->chrg);
-    ::ShellExecute(NULL, _T("open"), url, NULL, NULL, SW_SHOWNORMAL);
-}
-```
-
-**EnsureCreated**: same as DuiEditHost — call `re->EnsureCreated(hostHwnd)` once the host HWND is ready. `multi-line` / `word-wrap` must be set before EnsureCreated (baked-in style); changing them later requires destroying and recreating the HWND.
+| `DUIN_VALUECHANGED` | Content changed | 0 |
+| `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` | Focus enters / leaves | 0 |
+| `DUIN_RICHTEXT_MENUCOMMAND` | User picked a custom context-menu item (built-in commands are executed by the control and do not fire this) | That item's command id |
 
 #### XML quick reference
 
 |   |   |
 | --- | --- |
-| Tag | `<richedit id="..." placeholder="..." multi-line="true" word-wrap="true" auto-url-detect="true"/>` |
-| Detailed attribute reference | [§3.3.13 richedit](#xml-richedit) |
-| Events | `DUIN_VALUECHANGED` / `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` / `DUIN_RE_LINKCLICK` |
-| Notes | RTF serialization / image insertion / blockquote / find and other advanced features are only exposed in C++; XML does not cover them. |
+| Tag | `<richtext id="..." placeholder="..." multi-line="true" word-wrap="true" auto-grow-lines="1,5"/>` |
+| Detailed attribute reference | [§3.3.13 richtext](#xml-richtext) |
+| Events | `DUIN_VALUECHANGED` / `DUIN_SETFOCUS` / `DUIN_KILLFOCUS` / `DUIN_RICHTEXT_MENUCOMMAND` |
+| How it works | See `docs/windowless-richedit.md` — covers the inversion of control between engine and host, the coordinate systems and units, and a list of pitfalls found by measurement |
 
 <a id="DuiSearchBox"></a>
 
-### DuiSearchBox  `[HWND-hosted]`
+### DuiSearchBox  `[Pure DUI]`
 
 ![DuiSearchBox states](images/ctl-searchbox-states.png)
 
@@ -2275,9 +2317,9 @@ if (n->ctrlId == IDC_RE && n->code == DUIN_RE_LINKCLICK) {
 
 Compact search box with a magnifier icon + placeholder. Fires `DUIN_VALUECHANGED` as you type.
 
-**Implementation: as of M7+, refactored into a thin preset of `DuiEditHost`** — DuiSearchBox now <u>inherits</u> from DuiEditHost. The ctor installs the left magnifier via DuiEditHost's [inline-icon API](#DuiEditHost-IconApi); it listens to EN_CHANGE to show the right × when the text is non-empty and hide it when empty; it intercepts OnIconClicked_(RightIcon) to consume the click and SetText(""). Before the refactor it was ~250 lines of aggregation + custom paint; afterward it's ~80 lines. <u>Zero API surface change for callers</u>: `SetGlyphStripWidth` / `SetClearStripWidth` / `IsClearShowing` / `GetClearRect` / `GetEdit` all retain their semantics (GetEdit now returns `this`, because this class <u>is</u> the EDIT).
+**Implementation: a thin preset over the text box** — DuiSearchBox <u>inherits</u> from the plain text box ([DuiEdit](#DuiEdit), through the compatibility shell `DuiEditHost`). Its constructor installs the left magnifier via the [inline-icon API](#DuiEdit-IconApi); on every text change it shows the right-hand clear button when the text is non-empty and hides it when empty; and it intercepts the right-icon click to clear the text in place, so that click never bubbles up to application code. Before this refactor it was ~250 lines of aggregation plus custom painting; afterwards it is ~80 lines. <u>Zero API surface change for callers</u>: `SetGlyphStripWidth` / `SetClearStripWidth` / `IsClearShowing` / `GetClearRect` / `GetEdit` all retain their semantics (`GetEdit` returns `this`, because this class <u>is</u> the text box).
 
-**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). <u>After attaching you must still call</u> `sb->EnsureCreated(host.m_hWnd)` once the host HWND is ready (inherited from DuiEditHost). Common placement: at the top of a contact / file list.
+**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). Attach it and it works — there is no extra creation step. Common placement: at the top of a contact / file list.
 
 #### Code-based creation
 
@@ -2289,8 +2331,7 @@ sb->SetDebounceMs(200);    // Input debounce (multiple keystrokes within 200 ms 
 balloonwjui::DuiSearchBox* sbRaw = sb.get();
 vbox->AddChild(std::move(sb), balloonwjui::DuiLayout::Hint().Fixed(28));
 
-// Call once after host.Create(...):
-sbRaw->EnsureCreated(host.m_hWnd);
+sbRaw->SetText(_T(""));   // Ready to use once attached; no creation step
 ```
 
 #### XML-based creation
@@ -2305,15 +2346,15 @@ sbRaw->EnsureCreated(host.m_hWnd);
 // caller side:
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-if (auto* sb = static_cast<balloonwjui::DuiSearchBox*>(host.GetRoot()->FindControlById(400)))
-    sb->EnsureCreated(host.m_hWnd);
+auto* sb = static_cast<balloonwjui::DuiSearchBox*>(host.GetRoot()->FindControlById(400));
+// sb is ready to use
 ```
 
 #### Events
 
 | code | When it fires | extra (LPARAM) |
 | --- | --- | --- |
-| `DUIN_VALUECHANGED` | EDIT content changed (coalesced through `SetDebounceMs`). Clicking the right × clear button also fires it once (the value becomes empty). | 0 (use `GetText()` to read the latest value). |
+| `DUIN_VALUECHANGED` | Text changed (coalesced through `SetDebounceMs`). Clicking the clear button on the right also fires it once (the value becomes empty). | 0 (use `GetText()` to read the latest value). |
 
 ```
 // In the parent dialog's OnDuiNotify: incrementally filter the contact list
@@ -2324,7 +2365,7 @@ if (n->ctrlId == IDC_SEARCH_CONTACTS && n->code == DUIN_VALUECHANGED) {
 }
 ```
 
-**EnsureCreated**: embeds a DuiEditHost; call `sb->EnsureCreated(hostHwnd)` once the host HWND is ready.
+**No EnsureCreated needed** — this control *is* a windowless text box, usable right after construction.
 
 #### XML quick reference
 
@@ -2332,19 +2373,19 @@ if (n->ctrlId == IDC_SEARCH_CONTACTS && n->code == DUIN_VALUECHANGED) {
 | --- | --- |
 | Tag | `<searchbox id="..." placeholder="..." max-length="64"/>` |
 | Detailed attribute reference | [§3.3.14 searchbox](#xml-searchbox) |
-| Events | `DUIN_VALUECHANGED` — text changed (including via the × clear); ctrlId is the searchbox's id (automatically re-stamped from the inner EDIT). |
+| Events | `DUIN_VALUECHANGED` — text changed (including via the clear button); ctrlId is the searchbox's own id. |
 
 <a id="DuiSpinBox"></a>
 
-### DuiSpinBox  `[HWND-hosted]`
+### DuiSpinBox  `[Pure DUI]`
 
 ![DuiSpinBox default appearance](images/ctl-spinbox-default.png)
 
-*EDIT on the left + ↑↓ increment/decrement buttons on the right.*
+*Text box on the left + ↑↓ increment/decrement buttons on the right.*
 
 Numeric input field + small up/down increment buttons.
 
-**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). <u>After attaching you must still call</u> `spin->EnsureCreated(host.m_hWnd)` once the host HWND is ready (it embeds a DuiEditHost).
+**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). It aggregates a windowless text box ([DuiEdit](#DuiEdit)); attach it and it works, with no extra creation step.
 
 #### Code-based creation
 
@@ -2354,11 +2395,8 @@ spin->SetCtrlId(IDC_FONT_SIZE);
 spin->SetRange(0, 100);
 spin->SetValue(50);
 spin->SetStep(5);
-balloonwjui::DuiSpinBox* spinRaw = spin.get();
 vbox->AddChild(std::move(spin), balloonwjui::DuiLayout::Hint().Fixed(28));
-
-// Call once after host.Create(...):
-spinRaw->EnsureCreated(host.m_hWnd);
+// Ready to use once attached; no creation step
 ```
 
 #### XML-based creation
@@ -2373,15 +2411,15 @@ spinRaw->EnsureCreated(host.m_hWnd);
 // caller side:
 auto root = balloonwjui::DuiXmlBuilder().FromString(xml);
 host.SetRoot(std::move(root));
-if (auto* sp = static_cast<balloonwjui::DuiSpinBox*>(host.GetRoot()->FindControlById(500)))
-    sp->EnsureCreated(host.m_hWnd);
+auto* sp = static_cast<balloonwjui::DuiSpinBox*>(host.GetRoot()->FindControlById(500));
+// sp is ready to use
 ```
 
 #### Events
 
 | code | When it fires | extra (LPARAM) |
 | --- | --- | --- |
-| `DUIN_VALUECHANGED` | User clicks ↑↓ / types a valid number into the EDIT / scrolls the wheel; `SetValue(_, true)` also fires once (programmatic write); `SetValue(_, false)` does not. | The new value (`(int)n->extra`). |
+| `DUIN_VALUECHANGED` | User clicks ↑↓ / types a valid number into the text box / scrolls the wheel; `SetValue(_, true)` also fires once (programmatic write); `SetValue(_, false)` does not. | The new value (`(int)n->extra`). |
 
 ```
 // In the parent dialog's OnDuiNotify: adjust the font size
@@ -2392,7 +2430,7 @@ if (n->ctrlId == IDC_FONT_SIZE && n->code == DUIN_VALUECHANGED) {
 }
 ```
 
-**EnsureCreated**: embeds a DuiEditHost; call `sp->EnsureCreated(hostHwnd)` once the host HWND is ready. <u>When the user types into the EDIT</u>, the value does not auto-sync to m_value — the caller must commit it by calling `SetValue(_ttoi(GetEdit()->GetText()))` inside the EDIT's `DUIN_KILLFOCUS`.
+**No EnsureCreated needed** — the embedded text box is windowless and usable right after construction. Note, though, that <u>text the user types by hand</u> does not auto-sync to the internal value: the caller must commit it by calling `SetValue(_ttoi(GetEdit()->GetText()))` inside the text box's `DUIN_KILLFOCUS`.
 
 #### XML quick reference
 
@@ -2525,9 +2563,13 @@ if (n->ctrlId == IDC_MUTE_NOTIF && n->code == DUIN_VALUECHANGED) {
 
 #### Animation driver
 
-DuiSwitch drives the knob animation through `balloonwjui::DuiAnimMgr` + `DuiDoubleAnim`. The host must periodically call `DuiAnimMgr::Inst().TickAll(::GetTickCount())` to see intermediate frames — the typical pattern is for the top-level frame to `SetTimer(id, 16)` in `OnCreate`, call `TickAll` in `OnTimer`, and `KillTimer` + `DuiAnimMgr::Inst().Clear()` in `OnDestroy`. `DuiGallery`'s `GalleryFrame` already wires this pulse as a reference implementation.
+DuiSwitch drives the knob animation through `balloonwjui::DuiAnimMgr` + `DuiDoubleAnim`. `DuiAnimMgr` owns a shared 16 ms (~60 Hz) pulse timer, `::SetTimer(NULL, 0, 16, PulseProc)`, installed when its active list goes from empty to non-empty and dropped the moment the list empties again, so no timer lingers while nothing is animating. The host therefore <u>does not need to, and should not,</u> write the old "`SetTimer(id, 16)` in `OnCreate` + `TickAll` in `OnTimer` + `KillTimer` in `OnDestroy`" boilerplate; `DuiGallery`'s `GalleryFrame` and both XChat frames have had that host timer removed.
 
-For business dialogs that haven't wired the pulse: `SetChecked` still snaps the state to the endpoint immediately (the `animated=false` path), just without the animated transition.
+The one thing the host still has to do is teardown: call `DuiAnimMgr::Inst().Clear()` before the window goes away, to cancel animations that may still hold pointers to its controls (`Clear()` also drops the shared pulse timer).
+
+`TickAll(nowMs)` stays public for **manual driving from unit tests**: with no HWND and no message loop, feeding it increasing timestamps advances the animation frame by frame so intermediate values can be asserted (see `balloonui/Tests/DuiAnimationTests.cpp` and `DuiSwitchTests.cpp`). Progress is computed from absolute time, so calling it twice for the same frame has no extra effect.
+
+To skip the transition: `SetAnimated(false)`, or the `animated=false` path of `SetChecked`, snaps the state straight to the endpoint.
 
 #### XML-based creation
 
@@ -2562,7 +2604,7 @@ host.SetRoot(std::move(root));
 
 Dropdown picker. Two flavors: read-only (click to pop the dropdown) / editable (type-to-filter — requires `SetIncrementalSearch(true)`).
 
-**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). The editable flavor embeds an EDIT child, so after attaching you must call `cb->EnsureCreated(host.m_hWnd)` once the host HWND is ready (required for editable mode only; can be skipped for read-only).
+**Typical parent:** any layout container (VBox / HBox / Grid / GroupBox content area / Splitter pane / Dock child area). The editable flavor embeds a windowless text box ([DuiEdit](#DuiEdit)); attach it and it works, with no extra creation step.
 
 **Down arrow:** the right-side triangle renders through `DuiAA::FillPolygon` (anti-aliased; no stair-stepping on the diagonals). The color is configurable via `SetArrowColor(COLORREF)` — default `RGB(80,100,140)` blue-gray. Only the enabled state is overridden; the disabled state stays at the internal `kArrowDisabled = RGB(160,160,160)` (business code rarely needs to customize the disabled tint separately).
 
@@ -2578,11 +2620,8 @@ cb->SetEditable(true);
 cb->SetIncrementalSearch(true);
 cb->SetIncrementalSearchSubstring(true);   // Substring match (default false = prefix only)
 cb->SetIncrementalSearchCaseSensitive(false);
-balloonwjui::DuiComboBox* cbRaw = cb.get();
 hbox->AddChild(std::move(cb), balloonwjui::DuiLayout::Hint().Fixed(160));
-
-// Editable mode: call once after host.Create(...):
-cbRaw->EnsureCreated(host.m_hWnd);
+// Ready to use once attached; editable mode needs no extra step either
 ```
 
 |   |   |
@@ -3742,14 +3781,14 @@ hbox->AddChild(std::move(gif), balloonwjui::DuiLayout::Hint().Fixed(48));
 
 ### DuiImageOle  `[DUI]`
 
-An OLE image object embedded inside RichEdit. Once inserted into `DuiRichEditHost`, the image is serialized / scrolled along with the text. Commonly used for "insert emoji" in chat windows.
+An OLE image object embedded inside RichEdit. Once inserted into the rich-text control, the image is serialized / scrolled along with the text. Commonly used for "insert emoji" in chat windows.
 
-**Typical parent:** <u>not</u> a layout child — it's a RichEdit OLE object; the app calls `richEdit->InsertImage(...)` to inline-insert it into the `DuiRichEditHost` text stream, where it lives alongside regular characters and participates in scrolling / selection / copy-paste.
+**Typical parent:** <u>not</u> a layout child — it's a RichEdit OLE object; the app calls `richEdit->InsertImage(...)` to inline-insert it into the rich-text control's text stream, where it lives alongside regular characters and participates in scrolling / selection / copy-paste.
 
 #### Code usage
 
 ```
-// After richEdit has been added to a layout and EnsureCreated has been called:
+// After richEdit has been added to a layout:
 HBITMAP hBmp = LoadEmojiBitmap(_T("smiley.png"));
 richEdit->InsertImage(hBmp);     // Inline-insert at the current caret position
 ```
@@ -4000,7 +4039,7 @@ When embedded inside `DuiScrollView`, you usually don't need to subscribe — th
 | `StartFadeOut()` | Cancel the idle timer and start the fade-out (300 ms out to 0). Call this on OnMouseLeave. No-op when auto-hide is off. |
 | `SetAlpha(float)` / `GetAlpha()` | Directly set / query alpha, skipping the animation. 0 = fully transparent (OnPaint draws nothing); 1 = fully opaque. Normally not used — let the fade functions manage it. |
 
-**Hook up a 60 Hz pulse**: auto-hide's fade is driven by `DuiAnimMgr`, which requires the host's frame to call `DuiAnimMgr::Inst().TickAll(GetTickCount())` from WM_TIMER. XChat's `XChatMainFrame` already runs a 16 ms timer as a 60 Hz pulse; reuse that pattern. If your frame doesn't run the pulse, the scrollbar will stay stuck at its initial alpha (no fade in or out).
+**No host pulse needed**: auto-hide's fade is driven by `DuiAnimMgr`, which owns a shared 16 ms pulse timer — installed while something is animating, dropped once it finishes. The caller's frame <u>does not</u> need a `SetTimer` and should no longer call `TickAll`; as long as that thread pumps messages, the fade in and out run on their own. `TickAll` is still public, but only for manual driving from unit tests.
 
 ```
 // Enable auto-hide in a custom list control:
@@ -4158,7 +4197,7 @@ balloonui's stock controls cover ~90% of common UI needs; the remaining 10% — 
 | Need bulk rendering (e.g. a chat list with 1000 messages) | **Custom-draw** (so the HWND handle count doesn't explode) |
 | High animation density / frame-rate sensitive | **Custom-draw** (direct control over OnPaint) |
 | Just a regular button, list, tab, checkbox | **Use the stock control** (DuiButton / DuiListBox / DuiTab / ...) |
-| Need IME input | **Use DuiEditHost / DuiRichEditHost** (HWND-hosted; custom drawing can't do IME) |
+| Need IME input | **Use DuiEdit / DuiRichEdit** (a hand-drawn control cannot handle IME; both of these are windowless, with IME coming from the system text services) |
 
 <a id="custom-steps"></a>
 
@@ -5104,7 +5143,7 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 
 This chapter walks through five complete demos of common UI layouts — **each rendered with real balloonui controls** (not mocks) — and provides equivalent XML for each. Screenshots come from DuiGallery's `Layouts` tab; rerun `DuiGallery.exe --capture-all flamingoclient\docs\images` to regenerate them.
 
-The goal of this chapter is **"after reading, you can assemble a real window"** — focusing on the Hint usage (`Fixed`/`Weight`) for `DuiVBox/HBox/Dock/Splitter` + how to combine the stock controls (`DuiLabel`/`DuiEditHost`/`DuiButton`/`DuiListBox`/`DuiSearchBox`/`DuiAvatar`/`DuiComboBox`).
+The goal of this chapter is **"after reading, you can assemble a real window"** — focusing on the Hint usage (`Fixed`/`Weight`) for `DuiVBox/HBox/Dock/Splitter` + how to combine the stock controls (`DuiLabel`/`DuiEdit`/`DuiButton`/`DuiListBox`/`DuiSearchBox`/`DuiAvatar`/`DuiComboBox`).
 
 <a id="layout-skeleton-app"></a>
 
@@ -5135,7 +5174,7 @@ The 5 layout examples only differ in their <u>client-area control tree</u>; the 
 #include "Controls/DuiLayout.h"
 #include "Controls/DuiLabel.h"
 #include "Controls/DuiButton.h"
-#include "Controls/DuiEditHost.h"
+#include "Controls/DuiEdit.h"
 // ...include other control headers as the example requires...
 
 using namespace balloonwjui;
@@ -5174,7 +5213,7 @@ public:
 };
 
 // === 3) WinMain: process entry. One-shot: DPI awareness, OLE init, frame creation,
-//     client-area load, EnsureCreated on HWND-hosted controls, show, message loop.
+//     client-area load, show, message loop.
 int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
 {
     // a) Per-Monitor V2 DPI awareness — must run before any HWND is created.
@@ -5208,18 +5247,14 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
     auto root = BuildLoginRoot();
     frame.SetClientContent(std::move(root));
 
-    // f) EnsureCreated — if the client area contains DuiEditHost / DuiRichEditHost /
-    //    DuiSearchBox / DuiSpinBox, call this once after the host HWND is ready to
-    //    create their internal EDIT child HWNDs. See §3.4.
-    //    Simple walk: take the root, find them by id / type, call one at a time.
+    // f) Text boxes in the client area (DuiEdit / DuiSearchBox / DuiSpinBox /
+    //    DuiComboBox) need no extra creation step — they are windowless
+    //    controls, ready to use as soon as they are in the tree. Before
+    //    2026-08-17 each one needed an EnsureCreated call here; see §3.4.
     auto* clientRoot = frame.GetClientContent();
-    if (auto* edit = (DuiEditHost*)clientRoot->FindControlById(100 /*username*/))
+    if (auto* edit = (DuiEdit*)clientRoot->FindControlById(100 /*username*/))
     {
-        edit->EnsureCreated(frame.m_hWnd);
-    }
-    if (auto* edit = (DuiEditHost*)clientRoot->FindControlById(101 /*password*/))
-    {
-        edit->EnsureCreated(frame.m_hWnd);
+        edit->SetFocus();                  // e.g. put focus on the username box
     }
 
     // g) Show the window + run the message loop.
@@ -5295,11 +5330,11 @@ sub->SetTextAlign(DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 card->AddChild(std::move(sub), DuiLayout::Hint().Fixed(20));
 
 // Username / password
-auto eUser = std::make_unique<DuiEditHost>();
+auto eUser = std::make_unique<DuiEdit>();
 eUser->SetPlaceholder(_T("Username / email"));
 card->AddChild(std::move(eUser), DuiLayout::Hint().Fixed(32));
 
-auto ePwd = std::make_unique<DuiEditHost>();
+auto ePwd = std::make_unique<DuiEdit>();
 ePwd->SetPlaceholder(_T("Password"));
 ePwd->SetPassword(true);
 card->AddChild(std::move(ePwd), DuiLayout::Hint().Fixed(32));
@@ -5388,12 +5423,12 @@ std::unique_ptr<DuiControl> BuildLoginRoot()
     sub->SetTextAlign(DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     card->AddChild(std::move(sub), DuiLayout::Hint().Fixed(20));
 
-    auto eUser = std::make_unique<DuiEditHost>();
+    auto eUser = std::make_unique<DuiEdit>();
     eUser->SetCtrlId(IDC_USER);
     eUser->SetPlaceholder(_T("Username / email"));
     card->AddChild(std::move(eUser), DuiLayout::Hint().Fixed(32));
 
-    auto ePwd = std::make_unique<DuiEditHost>();
+    auto ePwd = std::make_unique<DuiEdit>();
     ePwd->SetCtrlId(IDC_PWD);
     ePwd->SetPlaceholder(_T("Password"));
     ePwd->SetPassword(true);
@@ -5443,8 +5478,8 @@ LRESULT MainFrame::OnDuiNotify(UINT, WPARAM, LPARAM lp, BOOL& bHandled)
         if (n->code == DUIN_CLICK)
         {
             // Read current values of the username / password EDITs
-            auto* user = (DuiEditHost*)GetClientContent()->FindControlById(IDC_USER);
-            auto* pwd  = (DuiEditHost*)GetClientContent()->FindControlById(IDC_PWD);
+            auto* user = (DuiEdit*)GetClientContent()->FindControlById(IDC_USER);
+            auto* pwd  = (DuiEdit*)GetClientContent()->FindControlById(IDC_PWD);
             DoLogin(user->GetText(), pwd->GetText());
         }
         return 0;
@@ -5470,7 +5505,7 @@ LRESULT MainFrame::OnDuiNotify(UINT, WPARAM, LPARAM lp, BOOL& bHandled)
 
 #### 9.1.3 Build & run
 
-The WinMain is the [§9.0.2](#layout-skeleton-app) skeleton verbatim, with the `extern` declaration changed to `BuildLoginRoot()`; the EnsureCreated block already covers the two EDITs IDC_USER / IDC_PWD. Use `frame.SetTitle(_T("Login"))` + `ResizeClient(800, 600)` so the card is genuinely centered. Build / run as in §9.0.3.
+The WinMain is the [§9.0.2](#layout-skeleton-app) skeleton verbatim, with the `extern` declaration changed to `BuildLoginRoot()`; the two text boxes (IDC_USER / IDC_PWD) are ready to use as soon as they are in the tree, with no extra creation step. Use `frame.SetTitle(_T("Login"))` + `ResizeClient(800, 600)` so the card is genuinely centered. Build / run as in §9.0.3.
 
 <a id="layout-form"></a>
 
@@ -5492,7 +5527,7 @@ auto makeRow = [](LPCTSTR labelText, LPCTSTR placeholder) {
     auto l = std::make_unique<DuiLabel>();
     l->SetText(labelText);
     l->SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-    auto e = std::make_unique<DuiEditHost>();
+    auto e = std::make_unique<DuiEdit>();
     if (placeholder) e->SetPlaceholder(placeholder);
     row->AddChild(std::move(l), DuiLayout::Hint().Fixed(80));   // Fixed label width
     row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));   // Flex editor
@@ -5584,7 +5619,7 @@ std::unique_ptr<DuiControl> BuildFormRoot()
         auto l = std::make_unique<DuiLabel>();
         l->SetText(labelText);
         l->SetTextAlign(DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        auto e = std::make_unique<DuiEditHost>();
+        auto e = std::make_unique<DuiEdit>();
         e->SetCtrlId(editId);
         if (placeholder) e->SetPlaceholder(placeholder);
         row->AddChild(std::move(l), DuiLayout::Hint().Fixed(80));
@@ -5632,10 +5667,10 @@ case IDC_SAVE:
     if (n->code == DUIN_CLICK)
     {
         auto* root = GetClientContent();
-        m_model.name  = ((DuiEditHost*)root->FindControlById(IDC_NAME ))->GetText();
-        m_model.nick  = ((DuiEditHost*)root->FindControlById(IDC_NICK ))->GetText();
-        m_model.email = ((DuiEditHost*)root->FindControlById(IDC_EMAIL))->GetText();
-        m_model.phone = ((DuiEditHost*)root->FindControlById(IDC_PHONE))->GetText();
+        m_model.name  = ((DuiEdit*)root->FindControlById(IDC_NAME ))->GetText();
+        m_model.nick  = ((DuiEdit*)root->FindControlById(IDC_NICK ))->GetText();
+        m_model.email = ((DuiEdit*)root->FindControlById(IDC_EMAIL))->GetText();
+        m_model.phone = ((DuiEdit*)root->FindControlById(IDC_PHONE))->GetText();
         SaveProfile(m_model);
         ::PostMessage(m_hWnd, WM_CLOSE, 0, 0);
     }
@@ -5648,7 +5683,7 @@ case IDC_CANCEL:
 case IDC_EMAIL:
     if (n->code == DUIN_VALUECHANGED)
     {
-        auto* edit = (DuiEditHost*)GetClientContent()->FindControlById(IDC_EMAIL);
+        auto* edit = (DuiEdit*)GetClientContent()->FindControlById(IDC_EMAIL);
         bool valid = ValidateEmail(edit->GetText());
         ((DuiButton*)GetClientContent()->FindControlById(IDC_SAVE))->SetEnabled(valid);
     }
@@ -5657,7 +5692,7 @@ case IDC_EMAIL:
 
 #### 9.2.3 Build & run
 
-WinMain uses the [§9.0.2](#layout-skeleton-app) skeleton; change the `extern` to `BuildFormRoot()`, and have the EnsureCreated block Create all 4 EDIT ids (IDC_NAME / NICK / EMAIL / PHONE). Use `SetTitle(_T("Profile"))`. Build command per §9.0.3.
+WinMain uses the [§9.0.2](#layout-skeleton-app) skeleton; change the `extern` to `BuildFormRoot()`; the 4 text boxes (IDC_NAME / NICK / EMAIL / PHONE) need no extra creation step. Use `SetTitle(_T("Profile"))`. Build command per §9.0.3.
 
 <a id="layout-three-pane"></a>
 
@@ -5837,7 +5872,7 @@ default:
 
 #### 9.3.3 Build & run
 
-WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildThreePaneRoot()`. The EnsureCreated block adds one line: `FindControlById(IDC_SEARCH)->EnsureCreated(frame.m_hWnd)` (SearchBox embeds one EDIT). Use `SetTitle(_T("Flamingo IM"))` + `ResizeClient(1100, 720)` so the three columns have enough room.
+WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildThreePaneRoot()`. The search box (IDC_SEARCH) likewise needs no extra creation step. Use `SetTitle(_T("Flamingo IM"))` + `ResizeClient(1100, 720)` so the three columns have enough room.
 
 <a id="layout-settings"></a>
 
@@ -6048,7 +6083,7 @@ case IDC_CLOSE_BEHAVIOR:
 
 #### 9.4.3 Build & run
 
-WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildSettingsRoot()`. There are no EDITs, so the EnsureCreated block can be removed entirely. Use `SetTitle(_T("Settings"))`. Build command per §9.0.3.
+WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildSettingsRoot()`. Use `SetTitle(_T("Settings"))`. Build command per §9.0.3.
 
 <a id="layout-skeleton"></a>
 
@@ -6181,7 +6216,7 @@ default:
 
 #### 9.5.3 Build & run
 
-WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildSkeletonRoot()`. No EDITs, so the EnsureCreated block can be removed. Use `SetTitle(_T("Document browser"))` + `ResizeClient(1024, 720)`.
+WinMain uses [§9.0.2](#layout-skeleton-app); change the `extern` to `BuildSkeletonRoot()`. Use `SetTitle(_T("Document browser"))` + `ResizeClient(1024, 720)`.
 
 ---
 
@@ -6364,7 +6399,7 @@ Note the "**and `!m_hBgImage`**" guard in the second-to-last step — this is th
 | The 4 corners shrink or overlap | The insets sum exceeds the source size (`L+R > srcW` or `T+B > srcH`). `DuiNinePatch::ClampInsets` scales them down proportionally, but visually it may still not be what you wanted — change the source image or shrink the insets. |
 | Background doesn't paint / black screen | The HBITMAP is 32bpp but with alpha=0. `StretchBlt(SRCCOPY)` copies the alpha and the host's BitBlt then treats it as transparent → black. Two fixes: ① force alpha=255 at load time; ② go through `Gdiplus::Bitmap::GetHBITMAP(bgColor, &hbm)` to pre-composite alpha into RGB (this is what the demo does). |
 | When to release the HBITMAP | The caller owns it; it must outlive the host. The host's destructor doesn't touch it. Recommended: within its lifetime call only `SetBgImage(nullptr, {})` to detach; let the OS reclaim it at process exit. |
-| Background hidden after inserting child controls | The children covered it. Children usually don't paint their own background (transparent), but some (DuiListBox / DuiEditHost) fill with a solid brush — give them `SetBgColor(transparent_marker)` or add padding between them. |
+| Background hidden after inserting child controls | The children covered it. Children usually don't paint their own background (transparent), but some (DuiListBox / DuiEdit) fill with a solid brush — give them `SetBgColor(transparent_marker)` or add padding between them. |
 
 <a id="bg-titlebar"></a>
 
@@ -6656,7 +6691,7 @@ The four-window 2×2 comparison (DemoNinePatchBg.exe shows exactly this layout):
 
 ## 12. Feature Strip (compile-time tree-shaking)
 
-balloonui ships 28 controls + an XML builder. In real projects, however, most apps use only a subset (a chat client may not need `DuiTreeView`, a utility app may not need `DuiRichEditHost`, and so on). This section describes how to use <u>preprocessor macros</u> to exclude unused controls from compilation, shrinking the final `balloonui.dll` / `.lib`.
+balloonui ships 31 controls + an XML builder (`DuiEditHost` is the compatibility name of `DuiEdit` — the same control, not counted twice). In real projects, however, most apps use only a subset (a chat client may not need `DuiTreeView`, a utility app may not need `DuiEmojiPanel`, and so on). This section describes how to use <u>preprocessor macros</u> to exclude unused controls from compilation, shrinking the final `balloonui.dll` / `.lib`.
 
 ### 12.1 How it works
 
@@ -6666,7 +6701,7 @@ All switches are defined in `balloonui/BalloonUiFeatures.h`. <u>Default is fully
 
 ### 12.2 Switch reference
 
-28 independent switches + 1 derived switch (GALLERY). Each `BUI_DISABLE_XXX` turns off the corresponding control; the table below groups controls by directory.
+32 independent switches + 1 derived switch (GALLERY). Each `BUI_DISABLE_XXX` turns off the corresponding control; the table below groups controls by directory.
 
 | Switch | Control | Effect when off | Dependents (also turned off) |
 | --- | --- | --- | --- |
@@ -6679,9 +6714,9 @@ All switches are defined in `balloonui/BalloonUiFeatures.h`. <u>Default is fully
 | `BUI_DISABLE_BADGE` | DuiBadge | `<badge>` XML disabled | — |
 | `BUI_DISABLE_SEPARATOR` | DuiSeparator | `<separator>` XML disabled | — |
 | `BUI_DISABLE_GROUPBOX` | DuiGroupBox | `<groupbox>` XML disabled | — |
-| `BUI_DISABLE_EDIT` | DuiEditHost | `<edit>` XML disabled | SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW |
-| `BUI_DISABLE_IMAGEOLE` | CDuiImageOle | Inline images in RichEdit unavailable | RICHEDIT |
-| `BUI_DISABLE_RICHEDIT` | DuiRichEditHost | `<richedit>` XML disabled | — |
+| `BUI_DISABLE_EDIT` | DuiEdit (and its compatibility shell DuiEditHost) | `<edit>` XML disabled | SEARCHBOX, SPINBOX, COMBOBOX, TREEVIEW |
+| `BUI_DISABLE_IMAGEOLE` | CDuiImageOle | Inline images in RichEdit unavailable | — |
+| `BUI_DISABLE_RICHTEXT` | DuiRichEdit / DuiTextHost / DuiTextServices | `<richtext>` XML disabled; the library retains no text editing capability at all | EDIT must be turned off <u>as well</u> (see below) |
 | `BUI_DISABLE_SEARCHBOX` | DuiSearchBox | `<searchbox>` XML disabled | — |
 | `BUI_DISABLE_SPINBOX` | DuiSpinBox | `<spinbox>` XML disabled | — |
 | `BUI_DISABLE_SLIDER` | DuiSlider | `<slider>` XML disabled | — |
@@ -6696,21 +6731,34 @@ All switches are defined in `balloonui/BalloonUiFeatures.h`. <u>Default is fully
 | `BUI_DISABLE_MENUBAR` | DuiMenuBar | `<menu-bar>` XML disabled; the persistent menu bar is unavailable | — |
 | `BUI_DISABLE_PROGRESSBAR` | DuiProgressBar | `<progress>` XML disabled | — |
 | `BUI_DISABLE_TOOLTIP` | DuiToolTipMgr | Hover tooltip bubbles unavailable | — |
+| `BUI_DISABLE_TOAST` | DuiToast | the lightweight toast bar that floats out at the top is unavailable | — |
 | `BUI_DISABLE_POPUPHOST` | DuiPopupHost | — | — |
 | `BUI_DISABLE_EMOJIPANEL` | DuiEmojiPanel | — | — |
 | `BUI_DISABLE_GIF` | DuiGif | Animated images degrade to a static first frame | — |
 | `BUI_DISABLE_FRAMEWINDOW` | DuiFrameWindow | `<frame-window>` + `FromFrameXml` disabled | — |
 | `BUI_DISABLE_XMLBUILDER` | DuiXmlBuilder | `FromString` / `FromFrameXml` disabled (you must hand-write a C++ AddChild chain) | — |
 
-The "dependents" column means: turning off this row's feature automatically also turns off these upstream features. For example, `BUI_DISABLE_EDIT` also removes SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW (because they all embed `DuiEditHost`). The file enforces this with `#if !defined(BUI_DISABLE_X) && defined(BUI_FEATURE_DEP)` chains.
+The "dependents" column means: turning off this row's feature automatically also turns off these upstream features. For example, `BUI_DISABLE_EDIT` also removes SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW (because they all embed a text box). The file enforces this with `#if !defined(BUI_DISABLE_X) && defined(BUI_FEATURE_DEP)` chains.
+
+**EDIT depends on RICHTEXT (new as of 2026-08-17).** Now that the text box is windowless, `DuiEdit` is built on top of the rich text control `DuiRichEdit` — layout, caret, selection, IME and clipboard all come from it. `BUI_DISABLE_RICHTEXT` and EDIT therefore **cannot both hold**. Unlike the other dependencies, this one is <u>not an automatic cascade</u>; it is caught by an `#error` in the dependency consistency section of `BalloonUiFeatures.h`:
+
+```
+#if defined(BUI_DISABLE_RICHTEXT) && defined(BUI_FEATURE_EDIT)
+#  error "BUI_FEATURE_EDIT requires BUI_FEATURE_RICHTEXT (DuiEdit derives from DuiRichEdit). Remove BUI_DISABLE_RICHTEXT or also disable EDIT."
+#endif
+```
+
+In other words, turning RICHTEXT off means adding `BUI_DISABLE_EDIT` too, at which point SEARCHBOX / SPINBOX / COMBOBOX / TREEVIEW disappear through the cascade above, leaving a control set with <u>no text input capability at all</u>.
 
 ### 12.3 Derived switch: BUI_FEATURE_GALLERY
 
-`DuiGalleryDlg` + `DuiGalleryAutoStart` is a dev-only test entry (Debug startup auto-pops a window that browses every control demo). It <u>uses almost every control</u>, so BalloonUiFeatures.h derives a `BUI_FEATURE_GALLERY` switch automatically: it is 1 only when all 28 underlying features are on. Turning off any underlying feature → gallery is skipped entirely. This avoids GalleryDlg.cpp referencing missing symbols like RunAll().
+`DuiGalleryDlg` + `DuiGalleryAutoStart` is a dev-only test entry (Debug startup auto-pops a window that browses every control demo). It <u>uses almost every control</u>, so BalloonUiFeatures.h derives a `BUI_FEATURE_GALLERY` switch automatically: it is 1 only when the 30 underlying features it uses are all on (`TOAST` and `LAYOUT` are not among them). Turning off any underlying feature → gallery is skipped entirely. This avoids GalleryDlg.cpp referencing missing symbols like RunAll().
 
 ### 12.4 Measured size differences
 
 Methodology: build balloonui.dll with defaults (all features on) and record its size; then add 23 `BUI_DISABLE_*` macros to `balloonui.vcxproj`'s preprocessor (keeping LAYOUT + LABEL + BUTTON + EDIT + XMLBUILDER), rebuild, and record the size. VS 2022 + Win32.
+
+These figures were measured <u>before</u> the text box went windowless on 2026-08-17. Back then EDIT did not yet depend on RICHTEXT; the same switch set now has to keep RICHTEXT as well in order to compile, so the real minimal-build size is larger than the table shows. Treat the percentages as an order of magnitude and re-measure if you need exact numbers.
 
 | Configuration | balloonui.dll size | Remaining |
 | --- | --- | --- |
@@ -6723,7 +6771,7 @@ Release mode benefits the most (48.7%) — Release lacks the feature-irrelevant 
 
 ### 12.5 App-side procedure
 
-1. In `balloonui/balloonui.vcxproj`'s "Project Properties → C/C++ → Preprocessor → Preprocessor Definitions", add the features you want to turn off, semicolon-separated. Example: BUI_DISABLE_TREEVIEW;BUI_DISABLE_RICHEDIT;BUI_DISABLE_MENU;BUI_DISABLE_GIF
+1. In `balloonui/balloonui.vcxproj`'s "Project Properties → C/C++ → Preprocessor → Preprocessor Definitions", add the features you want to turn off, semicolon-separated. Example: BUI_DISABLE_TREEVIEW;BUI_DISABLE_RICHTEXT;BUI_DISABLE_MENU;BUI_DISABLE_GIF
 2. Rebuild balloonui (Release produces `Bin\balloonui.dll` + `balloonui.lib`; Debug similarly).
 3. **Critical**: add the <u>same</u> preprocessor definitions to your business exe project. Otherwise the class declarations seen by the exe's `#include "Controls/.../DuiXxx.h"` won't match the DLL's exported symbols → link failure.
 4. Rebuild the business exe and deploy the new `balloonui.dll` to the runtime directory.
@@ -7045,7 +7093,7 @@ The overall feel is roughly 80% close to the real Win10 Task Manager; the remain
 
 ## 14. Case study: XChat (a Weixin PC clone)
 
-`third_party/XChat/` uses balloonui to clone the Weixin Windows PC client UI; it is, alongside DemoTaskManager, the second full "reference-grade" case study. Its emphasis: <u>switching between multi-view main panes (chat / contacts / official accounts / empty-chat watermark)</u>, <u>session-list-driven right-pane view selection</u>, <u>HWND-hosted EDITs (search box / input field)</u>, <u>ChatScrollBar auto-hide</u>, plus a large amount of <u>custom stroke icons / chat bubbles / file cards / procedurally drawn "fake images"</u>. It complements DemoTaskManager — the latter targets the "utility UI" of menus / tabs / lists, while this one targets the "consumer UI" of message streams + overlays + lots of custom visual elements.
+`third_party/XChat/` uses balloonui to clone the Weixin Windows PC client UI; it is, alongside DemoTaskManager, the second full "reference-grade" case study. Its emphasis: <u>switching between multi-view main panes (chat / contacts / official accounts / empty-chat watermark)</u>, <u>session-list-driven right-pane view selection</u>, <u>windowless text boxes (search bar / chat input field)</u>, <u>ChatScrollBar auto-hide</u>, plus a large amount of <u>custom stroke icons / chat bubbles / file cards / procedurally drawn "fake images"</u>. It complements DemoTaskManager — the latter targets the "utility UI" of menus / tabs / lists, while this one targets the "consumer UI" of message streams + overlays + lots of custom visual elements.
 
 ![XChat main pane, chat view](images/xchat/main_chat.png)
 
@@ -7063,13 +7111,13 @@ The overall feel is roughly 80% close to the real Win10 Task Manager; the remain
 | `DuiVBox / DuiHBox / DuiGrid` | Every XML container; the main pane's three columns rely on the outermost `<hbox>` |
 | `DuiVirtualList` | The main pane's middle session-list (21 conversations; rowH 68; manages its own scrollbar + auto-hide) |
 | `DuiScrollBar` | Built into the session-list; embedded by ChatMessageList; embedded by ContactCategoryList. **All enable auto-hide** (hidden by default, fade in on hover/wheel). |
-| `DuiEditHost` | Left-side search bar (id=60) + right-side chat input (id=400); the latter is multiline. Both use `EM_SETCUEBANNER` for the placeholder (the caller demo exe must wire up a ComCtl32 v6 manifest). |
+| `DuiEdit` | Left-side search bar (id=60) + right-side chat input (id=400); the latter is multiline. Both have their placeholder drawn by the control itself. |
 | `DuiSwitch` | The group-info panel's "Mute notifications" + the settings page's "Keep chat history" / "Auto download". <u>Use `alignCross="center"` so that fixedHeight actually takes effect</u>, centering the switch inside a 32-tall hbox. |
 | `DuiAvatar` | The 110×110 rounded-rect avatar on the login window's loading view; the 38×38 user avatar at the top of the main pane's left nav. |
 | `DuiLabel` | chat-title (id=300); the "Scan to log in" / "File transfer only" texts in the login window (manually center-aligned via SetTextAlign); the two-line label/value rows of info-field. |
 | `DuiMenu` | The bottom-left hamburger nav-icon pops a 5-item menu (Chat files / Chat history management / Lock / Feedback / Settings). |
 | `DuiAA / GDI+` | Every non-axis-aligned path (rounded-rect avatars / unread-badge pills / mute-bell ring / chevron triangle / chat round avatar / DuiSwitch pill / 8 kinds of "fake images" / file ext-icon / double-bubble watermark) goes through GDI+ AntiAlias. |
-| `DuiAnim` | The login spinner (rotating 240° arc) + DuiSwitch toggle + DuiScrollBar fade in/out all go through DuiAnimMgr. XChatMainFrame calls `TickAll` in a 16 ms WM_TIMER pulse. |
+| `DuiAnim` | The login spinner (rotating 240° arc) + DuiSwitch toggle + DuiScrollBar fade in/out all go through DuiAnimMgr. DuiAnimMgr owns a shared 16 ms pulse timer, so neither LoginFrame nor XChatMainFrame runs a host pulse — they only call `DuiAnimMgr::Inst().Clear()` in `OnDestroy`. |
 
 <a id="xchat-files"></a>
 
@@ -7226,7 +7274,7 @@ What the four views render as in practice:
 
 ![XChat chat view](images/xchat/main_chat.png)
 
-***Chat view (pane 200 / `main.xml`)**: the chat area on the right shows `ChatMessageList` rendering 6 ChatItemKinds (text bubble / fake image / file card / QR-code image / transfer card / date divider), with a bottom toolbar + real EDIT input + send button.*
+***Chat view (pane 200 / `main.xml`)**: the chat area on the right shows `ChatMessageList` rendering 6 ChatItemKinds (text bubble / fake image / file card / QR-code image / transfer card / date divider), with a bottom toolbar + text input + send button.*
 
 **SetVisible layout pitfall**: DUI's `SetRect` short-circuits Layout when `EqualRect` is true — after swapping panes, the right-pane vbox's rect hasn't changed, so its children don't reposition and stale pane content lingers.
 The fix: explicitly call `ForceLayout(rect)` to bypass the EqualRect short-circuit. This demo's `ApplySessionView` calls Force on both the right-pane vbox and paneChat at the end. That experience also led the library to add a `ForceLayout` entry point on DuiControl for reuse elsewhere.
@@ -7262,7 +7310,7 @@ The left half is the chat content; the right half is a 270 px group-info sidebar
       <control weight="1"/>
     </hbox>
 
-    <!-- 6.4 Input area (real EDIT) -->
+    <!-- 6.4 Input area -->
     <edit id="400" multiline="true" fixedHeight="92"/>
 
     <!-- 6.5 Bottom send row -->
@@ -7330,7 +7378,7 @@ The left half is the chat content; the right half is a 270 px group-info sidebar
 | Message stream (bubble / card / image / file) | **Pure custom paint**: ChatMessageList manages its own layout + 6 paint functions (PaintTextBubble / PaintImage / PaintTransferCard / PaintKnowledgeCard / PaintDateDivider / PaintFile) |
 | Fake images in chat (hot-pot / scenery / playground / QR / ...) | **Pure custom paint**: 8 ImageKinds each map to a 30–50-line GDI+ path; <u>no PNG resources</u> |
 | File-card ext-icon (DOCX/PDF/...) | **Pure custom paint**: FileExtColor(ext) returns a color by suffix → PaintFileExtIcon draws a rounded rect + header band + centered large white ext text |
-| Chat input box / search box | **Library + caller wiring**: <edit id="60/400"/>; at the end of MainFrame.LoadMainXml, `FindCtrlById` + `EnsureCreated(m_hWnd)` actually creates the EDIT HWND; the placeholder flows from BuildEdit → SetPlaceholder → SyncPlaceholderToHwnd → EM_SETCUEBANNER |
+| Chat input box / search box | **Library**: <edit id="60/400"/>; whatever the builder produces is ready to use, with no caller-side creation step; the placeholder flows straight from BuildEdit into `SetPlaceholder` |
 | Group-info info-field (label + value, two lines) | **XML composite + factory**: <info-field> assembles DuiVBox + 2 DuiLabels in the factory |
 | Group-info members grid | **Pure custom paint**: GroupMembersGrid takes Sessions().members by sessionIdx and draws a 2×4 grid (first 6 + add/remove placeholders) |
 | Group-info "Mute notifications" | **XML composite + library**: <info-mute-row> in the factory assembles DuiHBox + DuiLabel + DuiSwitch (with alignCross="center") |
@@ -7375,7 +7423,7 @@ All data is hard-coded in cpp, lazy-inited at process level as a static, and alw
 
 ## 15. Case study: CloudMelodyDesktop (music-app demo)
 
-`third_party/CloudMelodyDesktop/` uses balloonui to clone a music app ("FangMusic"); the design comes from `third_party/cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/` — 8 mockups in total. It complements DemoTaskManager / XChat — those two target "information-dense UIs" (menus / lists / tables); this demo targets the "card- / media-content + animation" <u>consumer UI</u>, demonstrating: <u>multi-page routing (ContentRouter)</u>, <u>real mock playback timing</u>, <u>GDI+ anti-aliased custom controls (rotating vinyl / circular play button / palette-gradient covers)</u>, <u>UpdateLayeredWindow per-pixel-alpha desktop overlays (desktop lyrics)</u>, <u>full-screen immersive mode</u>, and <u>DuiEditHost inline-icon API in action (search pill)</u>.
+`third_party/CloudMelodyDesktop/` uses balloonui to clone a music app ("FangMusic"); the design comes from `third_party/cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/` — 8 mockups in total. It complements DemoTaskManager / XChat — those two target "information-dense UIs" (menus / lists / tables); this demo targets the "card- / media-content + animation" <u>consumer UI</u>, demonstrating: <u>multi-page routing (ContentRouter)</u>, <u>real mock playback timing</u>, <u>GDI+ anti-aliased custom controls (rotating vinyl / circular play button / palette-gradient covers)</u>, <u>UpdateLayeredWindow per-pixel-alpha desktop overlays (desktop lyrics)</u>, <u>full-screen immersive mode</u>, and <u>the DuiEdit inline-icon API in action (rounded search box)</u>.
 
 **Note**: the screenshots below come from the <u>design files</u> (`cloud_melody_desktop/stitch_cloud_melody_desktop/music_*/screen.png`). The actual runtime (`third_party/Bin/CloudMelodyDesktop.exe`) matches the design — same palette, same layout, same type scale; details (card hover / button active state, etc.) follow the design's semantics.
 
@@ -7391,7 +7439,7 @@ All data is hard-coded in cpp, lazy-inited at process level as a static, and alw
 | `DuiVBox / DuiHBox` | All page-internal layouts, card grids, and the player-bar's transport row / progress row |
 | `DuiLabel` | All static text (title / subtitle / link / section header / duration label). Paired with `SetFont` from the 6-step scale in `CloudMelodyFonts.h` (DisplayLg / HeadlineMd / TitleSm / BodyMd / BodySm / LabelXs) |
 | `DuiAvatar` | TopBar user avatar (circular fallback "Z") + ProfilePage large avatar (96 px) |
-| `DuiEditHost` | The TopBar search pill embeds a real EDIT — <u>uses the newly added inline-icon API</u> to install a left-side magnifier (`SetIcon(LeftIcon, 32, painter)`) + `SetBgColor` blends the EDIT background with the pill's gray fill + `SetShowBorder(false)` drops the EDIT's default 1 px border |
+| `DuiEdit` | The TopBar rounded search box — uses the <u>inline-icon API</u> to install a left-side magnifier (`SetIcon(LeftIcon, 32, painter)`) + `SetBgColor` blends the fill with the container's gray background + `SetShowBorder(false)` drops the default 1 px border |
 | `DuiTab` | LocalMusic's "All songs / Artists / Albums / Downloading"; Favorites' "All / Playlists / Artists"; NowPlaying's "Lyrics / Video" |
 | `DuiSeparator` | Section separators on each page; below the song-list header |
 | `DuiSlider` | The PlayerBar volume slider (with `SetTabStop(false)` so clicks at the edge don't draw a dashed focus rect) |
@@ -7410,7 +7458,7 @@ All data is hard-coded in cpp, lazy-inited at process level as a static, and alw
 | `App/CloudMelodyTheme.h` | Centralized design tokens: every color (kColor*), size (kSize*), corner radius (kRadius*); font name kFontFaceCJK = Microsoft YaHei |
 | `App/CloudMelodyFonts.{h,cpp}` | 6-step process-level HFONT singleton cache: DisplayLg(30/700) / HeadlineMd(22/600) / TitleSm(16/600) / BodyMd(14/400) / BodySm(13/400) / LabelXs(11/500). `Fonts::Get(kind)` lazy-constructs + caches. `MakeLabel(text, color, kind)` is a convenience helper |
 | `App/Sidebar.{h,cpp}` | Left 220 px nav rail. The private class `SidebarNavItem : DuiControl` custom-draws the active 4 px red bar + tint background; custom-draws 8 nav icons (NavIconKind enum: Discover/Podcast/Music/Favorites/Recent/Profile/Settings/Help — all GDI+ 1.5 px strokes). `BuildSidebar(initialNav)` factory returns the root |
-| `App/TopBar.{h,cpp}` | Top 48 px tool strip. `SearchPill : DuiVBox` custom-draws a rounded pill gray fill + 1 px border, and embeds a `DuiEditHost` using the [new inline-icon API](#DuiEditHost-IconApi) for the left magnifier. `BuildTopBar()` factory |
+| `App/TopBar.{h,cpp}` | Top 48 px tool strip. `SearchPill : DuiVBox` custom-draws a rounded pill gray fill + 1 px border, and embeds a `DuiEdit` using the [inline-icon API](#DuiEdit-IconApi) for the left magnifier. `BuildTopBar()` factory |
 | `App/PlayerBar.{h,cpp}` | Bottom 80 px player bar. `PlayerBar : DuiHBox` is itself the control class, caching pointers to 6 children (cover / title / sub / left/right time labels / progress / playBtn / shuffleBtn). Public methods: `Tick(deltaMs) / OnPlayClicked / OnPrevClicked / OnNextClicked / OnSeek / OnShuffleClicked`. State: m_trackIdx / m_durationSec / m_posMs / m_playing / m_playMode (4-mode cycle) |
 | `App/ContentRouter.{h,cpp}` | The middle-pane page router `: DuiVBox`. `Switch(navId, extra)`: destroy the old page → call the matching `Build*Page()` → AddChild + ForceLayout. NavId enum lives in Sidebar.h (100..120) |
 | `App/DesktopLyricsWnd.{h,cpp}` | Standalone ATL `CWindowImpl` top-level overlay. `WS_POPUP + WS_EX_TOPMOST + WS_EX_LAYERED + WS_EX_NOACTIVATE`. <u>UpdateLayeredWindow per-pixel-alpha</u> mode: fully transparent background + white text with a 1 px black outline + the left 60% in green ("already sung"). Draggable from anywhere (entire surface returns HTCAPTION) |
@@ -7656,18 +7704,18 @@ void RotatingDisc::Tick(int deltaMs)
 }
 ```
 
-#### SearchPill (using DuiEditHost's inline-icon API)
+#### SearchPill (using the DuiEdit inline-icon API)
 
 ```
 class SearchPill : public DuiVBox {
 public:
     SearchPill() {
-        auto edit = std::make_unique<DuiEditHost>();
+        auto edit = std::unique_ptr<DuiEdit>(new DuiEdit());
         edit->SetPlaceholder(_T("Search music, videos, podcasts..."));
         edit->SetBgColor(kPillBg);                  // Blend with the pill's gray fill
         edit->SetShowBorder(false);                  // Drop the EDIT's default 1 px border
         // Left magnifier: uses the newly added inline-icon API
-        edit->SetIcon(DuiEditHost::LeftIcon, 32, [](HDC hdc, const RECT& rc) {
+        edit->SetIcon(DuiEdit::LeftIcon, 32, [](HDC hdc, const RECT& rc) {
             // GDI+ AA ring + diagonal handle bottom-right
             DuiAA::FillEllipse(hdc, ...);
             DuiAA::DrawLine(hdc, ...);
@@ -7872,7 +7920,7 @@ A storage convention for 32bpp BGRA bitmaps — each pixel's RGB channels are <u
 
 ### RICHEDIT50W
 
-The rich-text control class shipped with Windows (msftedit.dll). It renders mixed text + images / RTF / IME input, so balloonui's `DuiRichEditHost` embeds a real RICHEDIT50W HWND directly instead of <u>trying</u> to reimplement it as pure DUI.
+The rich-text control class shipped with Windows (msftedit.dll). It renders mixed text + images / RTF / IME input. balloonui's `DuiRichEdit` drives that control's text engine (text services) directly instead of <u>trying</u> to reimplement text layout as pure DUI.
 
 <a id="g-subclass"></a>
 

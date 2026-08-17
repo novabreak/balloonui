@@ -62,6 +62,9 @@ namespace balloonwjui {
 //   · DUIN_DBLCLK        — 双击某行；extra = 行 index。
 //   · DUITN_CHECKED      — checkbox 切换；extra = 行 index。
 //   · DUITN_REORDERED    — 拖拽重排完成；extra = 新位置。
+//   · DUITN_ITEMDELETE   — 点了某行右侧的删除叉；extra = 行 index。
+//                          <u>本控件只发通知、不删数据</u>，由业务侧决定是否
+//                          二次确认、是否真删（见 SetShowItemDelete）。
 //
 // 替代关系：CSkinListBox（老 UI 里的好友 / emoji / 最近会话面板都用过）。
 class BUI_API DuiListBox : public DuiControl
@@ -69,8 +72,9 @@ class BUI_API DuiListBox : public DuiControl
 public:
     enum NotifyCode
     {
-        DUITN_CHECKED   = DUIN_CUSTOM + 1,
-        DUITN_REORDERED = DUIN_CUSTOM + 2,
+        DUITN_CHECKED    = DUIN_CUSTOM + 1,
+        DUITN_REORDERED  = DUIN_CUSTOM + 2,
+        DUITN_ITEMDELETE = DUIN_CUSTOM + 3,
     };
 
     DuiListBox();
@@ -138,6 +142,19 @@ public:
     // 程序切换勾选；notify=true 时发 DUITN_CHECKED（extra = idx）。
     void    SetItemChecked(int idx, bool checked, bool notify = true);
 
+    // ---- 每行右侧删除叉 ----
+
+    // 启用 / 关闭每行右侧的删除叉列（宽 kDeleteColW）。
+    //
+    // 开启后每行右端画一个淡灰色的 ×，鼠标悬停在该行时加深、悬停在叉上再加深，
+    // 点它发 DUITN_ITEMDELETE（extra = 行 index）且<u>不改变选中行</u>。
+    // 典型用途是登录框账号历史下拉里的"删除这个账号"。
+    //
+    // 本控件只发通知、不动自己的 model —— 要不要弹二次确认、确认后删哪些东西，
+    // 全由业务侧决定；业务侧真要删时自行调 DeleteItem。
+    void    SetShowItemDelete(bool b);
+    bool    GetShowItemDelete() const { return m_showItemDelete; }
+
     // ---- 拖拽重排 ----
 
     // 启用 / 关闭拖拽重排。开启后用户可拖一行上下移动。
@@ -191,6 +208,15 @@ private:
     int         ContentHeight() const               { return (int)m_items.size() * m_itemH; }
     int         BodyWidth() const;                  // m_rcItem 宽 - 滚动条宽
 
+    // 第 index 行删除叉的绘制矩形（host 客户区坐标）；未开启删除列时返回空矩形。
+    RECT        DeleteButtonRect(int index) const;
+
+    // 某点是否落在第 index 行的删除叉热区内。热区取整个删除列（比叉本身大一圈），
+    // 免得非要精准点中那两笔才生效。
+    //   pt：host 客户区坐标。
+    //   index：行索引。
+    bool        HitDeleteButton(POINT pt, int index) const;
+
 private:
     struct Item { CString text; LPARAM lParam; bool selected; bool checked; };
     std::vector<Item>   m_items;
@@ -202,11 +228,23 @@ private:
 
     bool                m_multiSelect    = false;
     bool                m_showCheckboxes = false;
+    bool                m_showItemDelete = false;    // 是否在每行右侧画删除叉
+    int                 m_deleteHoverIdx = -1;       // 鼠标正悬在哪一行的删除叉上；-1 表示都没有
     bool                m_dragReorder    = false;
     int                 m_dragSrcIdx     = -1;       // 当前拖动源行
     int                 m_dragDropIdx    = -1;       // 拖动期间计算出的落点行
 
     static const int kCheckColW = 22;
+
+    // 删除叉列宽（像素）。比勾选框列略宽，给叉本身留出四周的空白，
+    // 免得紧贴行右边缘、点起来别扭。
+    static const int kDeleteColW = 26;
+
+    // 叉的笔画长度（像素）：从中心向四角各画这么长的两笔。
+    static const int kDeleteGlyphPx = 8;
+
+    // 叉的笔画粗细（像素）。
+    static const int kDeleteStrokePx = 1;
 
     COLORREF            m_clrBg       = RGB(255, 255, 255);
     COLORREF            m_clrText     = RGB( 30,  30,  30);

@@ -1,8 +1,11 @@
 #include "stdafx.h"
 #include "CaptureMode.h"
-#include "Pages.h"
+#include "PageKit.h"
+#include "PageRegistry.h"
 #include "DuiHost.h"
 #include "DuiDpi.h"
+
+#include <vector>
 
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
@@ -13,13 +16,20 @@ namespace CaptureMode {
 
 namespace {
 
-// Canvas the host is given. Tall enough for the longest current page.
-// The DocCaptures page stacks 30+ rows ≈ 120px each, so we need ~4000+
-// to fit them without GetRect()-overflowing the back buffer.
-// 6000 gives comfortable headroom for future additions; the resulting
-// 32bpp DIB is ~26MB which is fine on modern hardware.
+// 离屏画布的尺寸（像素）。
+//
+// 高度必须装得下最长的那一页。文档配图夹具一页有 38 个段落，每段是
+// "标题 + 说明 + 一行演示 + 段间空白"，实测总高已经超过 6000 —— 此前这个
+// 值正是 6000，于是最后一段的配图长期是一张全黑的图，而且没有任何报错。
+// 9000 给后续新增留出余量；对应的 32 位 DIB 约 40MB，现在的机器完全够用。
+// 越界时的告警见下面截图循环里的判断。
 const int kCanvasW = 1100;
-const int kCanvasH = 6000;
+const int kCanvasH = 9000;
+
+// 每建完一页之后驱动重绘与消息循环的轮数。
+// 前几轮让宿主把 DUI 控件树画进后台缓冲，后几轮让寄宿的真窗口子控件
+// （输入框、富文本框）完成自己的排列与绘制。
+const int kPumpRounds = 6;
 
 // Owner window class for the headless host. Just provides an HWND that
 // the DuiHost can attach to; does not paint anything itself.
@@ -117,7 +127,7 @@ bool SaveRegionAsPng(HDC srcDC, int x, int y, int w, int h, LPCTSTR outPath)
 //   1) BitBlt the host's DUI back buffer (covers all paint-only DUI
 //      controls — buttons, labels, avatars, etc.).
 //   2) Walk every visible HWND-hosted child (EDIT in DuiEditHost /
-//      DuiSearchBox / DuiSpinBox / DuiRichEditHost) and paint each
+//      DuiSearchBox / DuiSpinBox) and paint each
 //      child's content on top of the snapshot in its rect.
 //
 // PrintWindow on a fully-off-screen window paints black on Win10+, so
@@ -227,68 +237,95 @@ int RunCaptureAll(LPCTSTR outDir)
                 WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0);
 
     int totalSaved = 0;
-    int nPages = 0;
-    const Pages::PageInfo* pages = Pages::GetPages(nPages);
+    int groupCount = 0;
+    const Gallery::PageGroup* groups = Gallery::GetPageGroups(groupCount);
 
-    for (int i = 0; i < nPages; ++i)
+    // 遍历全部分组下的全部页面。这里**不能**按 showInNav 过滤 —— 文档配图
+    // 夹具那一页恰恰是不出现在导航里的，滤掉它就一张配图都出不来。
+    for (int g = 0; g < groupCount; ++g)
     {
-        Pages::GetCaptureMarks().clear();
-        auto content = pages[i].build();
-        host.SetRoot(std::move(content));
-
-        // Pump messages a few times. The first pumps let DuiHost paint
-        // its DUI tree; the later pumps let the HWND-hosted children
-        // (EDIT, RichEdit) lay out and paint themselves.
-        for (int pump = 0; pump < 6; ++pump)
+        for (int p = 0; p < groups[g].pageCount; ++p)
         {
-            ::RedrawWindow(host.m_hWnd, NULL, NULL,
-                           RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
-                           | RDW_ALLCHILDREN);
-            MSG msg;
-            while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-            {
-                ::TranslateMessage(&msg);
-                ::DispatchMessage(&msg);
-            }
-        }
-
-        // Snapshot the entire host's client area (DUI back buffer +
-        // PrintWindow each HWND-hosted child) into one big DIB, then
-        // crop per-mark.
-        HBITMAP fullDib = nullptr;
-        HDC fullDC = SnapshotHostToDib(host.m_hWnd,
-                                       host.GetBackBufferDC(),
-                                       kCanvasW, kCanvasH, fullDib);
-        if (!fullDC)
-        {
-            continue;
-        }
-
-        for (const auto& mark : Pages::GetCaptureMarks())
-        {
-            if (!mark.anchor)
+            const Gallery::PageEntry& entry = groups[g].pages[p];
+            if (entry.build == NULL)
             {
                 continue;
             }
-            const RECT& r = mark.anchor->GetRect();
-            int w = r.right - r.left;
-            int h = r.bottom - r.top;
-            if (w <= 0 || h <= 0)
+            Gallery::GetCaptureMarks().clear();
+            std::unique_ptr<DuiControl> content = entry.build();
+            host.SetRoot(std::move(content));
+
+            // Pump messages a few times. The first pumps let DuiHost paint
+            // its DUI tree; the later pumps let the HWND-hosted children
+            // (EDIT, RichEdit) lay out and paint themselves.
+            for (int pump = 0; pump < kPumpRounds; ++pump)
+            {
+                ::RedrawWindow(host.m_hWnd, NULL, NULL,
+                               RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                               | RDW_ALLCHILDREN);
+                MSG msg;
+                while (::PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+                {
+                    ::TranslateMessage(&msg);
+                    ::DispatchMessage(&msg);
+                }
+            }
+
+            // Snapshot the entire host's client area (DUI back buffer +
+            // PrintWindow each HWND-hosted child) into one big DIB, then
+            // crop per-mark.
+            HBITMAP fullDib = nullptr;
+            HDC fullDC = SnapshotHostToDib(host.m_hWnd,
+                                           host.GetBackBufferDC(),
+                                           kCanvasW, kCanvasH, fullDib);
+            if (!fullDC)
             {
                 continue;
             }
-            CString path;
-            path.Format(_T("%s\\ctl-%s.png"), outDir, (LPCTSTR)mark.name);
-            if (SaveRegionAsPng(fullDC, r.left, r.top, w, h, path))
-            {
-                ++totalSaved;
-                ::OutputDebugString(path);
-                ::OutputDebugString(_T("\n"));
-            }
-        }
 
-        ::DeleteDC(fullDC);
-        ::DeleteObject(fullDib);
+            const std::vector<Gallery::CaptureMark>& marks = Gallery::GetCaptureMarks();
+            for (size_t m = 0; m < marks.size(); ++m)
+            {
+                const Gallery::CaptureMark& mark = marks[m];
+                if (mark.anchor == NULL)
+                {
+                    continue;
+                }
+                const RECT& r = mark.anchor->GetRect();
+                int w = r.right - r.left;
+                int h = r.bottom - r.top;
+                if (w <= 0 || h <= 0)
+                {
+                    continue;
+                }
+                // 超出画布的部分在快照 DIB 里根本不存在，此时 BitBlt 仍会
+                // "成功"，写出来的却是一张全黑的图，而且不报任何错。这种
+                // 失败此前一直没有征兆：画布高度写死 6000 像素，而文档配图
+                // 夹具那一页实际已经长到 6000 以上，最后一张配图长期是黑的。
+                // 这里显式判一次并输出告警，把静默失败变成看得见的失败。
+                if (r.bottom > kCanvasH || r.right > kCanvasW)
+                {
+                    CString warn;
+                    warn.Format(_T("DuiGallery: capture '%s' is outside the %d x %d canvas ")
+                                _T("(rect right=%d bottom=%d), skipped.\n"),
+                                (LPCTSTR)mark.name, kCanvasW, kCanvasH,
+                                (int)r.right, (int)r.bottom);
+                    ::OutputDebugString(warn);
+                    continue;
+                }
+                CString path;
+                path.Format(_T("%s\\ctl-%s.png"), outDir, (LPCTSTR)mark.name);
+                if (SaveRegionAsPng(fullDC, r.left, r.top, w, h, path))
+                {
+                    ++totalSaved;
+                    ::OutputDebugString(path);
+                    ::OutputDebugString(_T("\n"));
+                }
+            }
+
+            ::DeleteDC(fullDC);
+            ::DeleteObject(fullDib);
+        }
     }
 
     if (host.IsWindow())

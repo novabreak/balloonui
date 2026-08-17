@@ -30,7 +30,9 @@ namespace balloonwjui {
 //   · Show(text):设文本 → SetVisible(true) → m_alpha=0 → 启动渐入
 //     动画(200ms, alpha 0→1)→ 显示等待 m_durationMs → 启动渐出
 //     动画(200ms, alpha 1→0) → SetVisible(false)。整条链全部走
-//     balloonui DuiAnimMgr, caller 不需要 SetTimer / Tick。
+//     balloonui DuiAnimMgr, caller 不需要 SetTimer / Tick —— DuiAnimMgr
+//     在活跃动画非空期间自带 16ms 脉冲定时器, 只要所在线程在泵消息
+//     (含客户端手写的模态消息循环) 就会逐帧推进。
 //   · 多次 Show:m_animGen++ 让旧链路 callback 失效;新文本立刻从
 //     当前 alpha 开始渐入,无视觉跳变。
 //   · HideNow:m_animGen++ + SetVisible(false), 立刻 hard cancel。

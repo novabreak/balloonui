@@ -4,6 +4,108 @@
 
 namespace balloonwjui {
 
+// =====================================================================
+// 主轴尺寸的三种模式
+// =====================================================================
+//
+// 「主轴」指容器排列子控件的方向：水平布局的主轴是 X（分配宽度），竖直
+// 布局的主轴是 Y（分配高度）。另一个方向叫交叉轴，规则简单得多，不在
+// 本段讨论范围内。
+//
+// 主轴尺寸有三种模式，全部压在 Hint::fixedMain 这**一个整数字段**上，
+// 靠取值区分。这种设计紧凑但确实容易看错，所以在这里一次说清楚：
+//
+//   ┌──────────────┬──────────────┬────────────────────────────────────┐
+//   │ fixedMain    │ 模式         │ 这个子控件占多少                    │
+//   ├──────────────┼──────────────┼────────────────────────────────────┤
+//   │ >= 0         │ 固定         │ 就是这个数（像素）                  │
+//   │ -1（默认）   │ 按权重       │ 剩余空间按 weight 比例分            │
+//   │ kAutoMain    │ 自动         │ 问子控件自己：GetDesiredSize()      │
+//   │ （= -2）     │              │                                    │
+//   └──────────────┴──────────────┴────────────────────────────────────┘
+//
+// ─────────────────────────────────────────────────────────────────────
+// 为什么自动档要和固定档归成一类，而不是和按权重归成一类
+// ─────────────────────────────────────────────────────────────────────
+//
+// 因为排列是**两趟**完成的，而这两趟的分工决定了归类：
+//
+//   第一趟：把所有「尺寸已经能确定」的子控件占用的空间加起来，得出还剩
+//           多少空间可分；同时统计参与分配的权重总和。
+//   第二趟：逐个摆放。尺寸确定的照数摆，按权重的从剩余空间里按比例取。
+//
+// 自动档的尺寸在第一趟就能确定（问一下子控件即可），所以它属于「先占掉
+// 自己那份」的一类，和固定档一起进 fixedSum；剩下的才轮到按权重的兄弟分。
+//
+// 反过来说，如果把自动档当成按权重处理，它会去分剩余空间，报告的期望
+// 尺寸就完全白算了 —— 这正是判断时**不能只写 `fixedMain < 0`** 的原因：
+// 那个条件会把 -1 和 -2 一起收进来。下面两个辅助函数就是为了把这个判断
+// 收在一处，避免四个调用点各写各的、漏掉一处。
+//
+// ─────────────────────────────────────────────────────────────────────
+// 使用自动档时需要知道的两件事
+// ─────────────────────────────────────────────────────────────────────
+//
+// 一、**子控件必须真的会报告期望尺寸。** 基类默认报告零，没覆写过这个
+//     方法的控件用自动档等于「占 0 像素」，看起来就是控件消失了。
+//
+// 二、**期望尺寸往往依赖交叉轴的尺寸，而第一趟时交叉轴还没定下来。**
+//     竖直布局里最典型：文本控件的期望高度取决于它有多宽（宽度决定
+//     折几行）。第一趟询问时，子控件手上只有**上一次布局**留下的宽度。
+//     后果是宽度刚变化的那一帧，高度会按旧宽度算，慢一拍才纠正过来。
+//     实践中影响很小（下一次布局就对了），但要知道有这回事 —— 如果看到
+//     「拖动窗口改变宽度时，自动增高的控件高度慢一帧」，根因就在这里。
+//     彻底解决需要「先定交叉轴再问主轴」的两阶段测量，那是更大的改造，
+//     本次不做。
+
+namespace {
+
+// 该子控件是否参与「剩余空间按权重分配」。
+//
+// **只有按权重档参与**。固定档与自动档都不参与 —— 它们在第一趟就把自己
+// 那份占掉了。
+//
+// 注意判断条件不能简写成 `fixedMain < 0`：自动档的取值也是负数（-2），
+// 那样写会把自动档误当成按权重，它报告的期望尺寸就被忽略了。
+bool HintIsWeighted(const DuiLayout::Hint& h)
+{
+    return h.fixedMain < 0 && h.fixedMain != DuiLayout::Hint::kAutoMain;
+}
+
+// 取该子控件在主轴上「已经能确定占多少」。
+//
+//   固定档：返回调用方指定的像素数。
+//   自动档：问子控件自己报告的期望尺寸。
+//   按权重：返回 0 —— 它的尺寸要等第一趟统计完剩余空间才算得出来，
+//           由调用方在第二趟按比例另算。
+//
+// 排列的两趟都要调本函数，且两趟必须得到**一致的结果**，否则第一趟算出的
+// 剩余空间与第二趟实际摆放的用量对不上，界面会出现空隙或溢出。所以这里
+// 不做任何缓存、也不带副作用，每次都老老实实重新问一遍。
+//
+//   h：该子控件的布局提示。
+//   pChild：子控件；为空时自动档退化为 0（防御性处理，正常不会发生）。
+//   bHorizontal：主轴是否为水平方向 —— 水平布局取期望宽度，竖直布局取
+//                期望高度。传错的症状是自动档控件的尺寸莫名其妙，
+//                因为拿的是另一个方向上的值。
+int HintFixedMainPx(const DuiLayout::Hint& h, const DuiControl* pChild, bool bHorizontal)
+{
+    if (h.fixedMain >= 0)
+    {
+        return h.fixedMain;
+    }
+    if (h.fixedMain == DuiLayout::Hint::kAutoMain && pChild != nullptr)
+    {
+        SIZE sz = pChild->GetDesiredSize();
+        int nMain = bHorizontal ? (int)sz.cx : (int)sz.cy;
+        // 期望尺寸为负是不合理的取值，一律按 0 处理，免得把剩余空间算成负数。
+        return (nMain > 0) ? nMain : 0;
+    }
+    return 0;
+}
+
+} // 匿名命名空间
+
 // ===== DuiLayout (base) ===================================================
 
 void DuiLayout::SetPadding(int l, int t, int r, int b)
@@ -114,6 +216,9 @@ RECT DuiLayout::ApplyHint(const RECT& cell, const Hint& h, bool mainIsHorizontal
 
     int availW = r.right - r.left;
     int availH = r.bottom - r.top;
+    // 这里读到的 fixedMain 可能是负值（-1 按权重、-2 自动档）。不必特殊处理：
+    // 下面 applyAxis 对负值一律走「填满可用空间」的分支，而调用方传进来的
+    // cell 已经是按该子控件实际尺寸算好的，填满它正是想要的结果。
     int wantW  = mainIsHorizontal ? h.fixedMain  : h.fixedCross;
     int wantH  = mainIsHorizontal ? h.fixedCross : h.fixedMain;
 
@@ -181,10 +286,10 @@ void DuiHBox::Layout(const RECT& rcAvail)
         }
         ++visN;
         Hint h = HintFor(up.get());
-        int chunk = (h.fixedMain >= 0) ? h.fixedMain : 0;
+        int chunk = HintFixedMainPx(h, up.get(), /*bHorizontal=*/true);
         chunk += h.marginL + h.marginR;
         fixedSum += chunk;
-        if (h.fixedMain < 0)
+        if (HintIsWeighted(h))
         {
             weightSum += (h.weight > 0 ? h.weight : 1);
         }
@@ -218,9 +323,10 @@ void DuiHBox::Layout(const RECT& rcAvail)
 
         Hint h = HintFor(up.get());
         int mainPx;
-        if (h.fixedMain >= 0)
+        if (!HintIsWeighted(h))
         {
-            mainPx = h.fixedMain + h.marginL + h.marginR;
+            mainPx = HintFixedMainPx(h, up.get(), /*bHorizontal=*/true)
+                   + h.marginL + h.marginR;
         }
         else
         {
@@ -248,7 +354,10 @@ SIZE DuiHBox::GetDesiredSize() const
         ++visN;
         Hint h = HintFor(up.get());
 
-        int mainPx = (h.fixedMain >= 0) ? h.fixedMain : 0;
+        // 主轴（水平布局是 X）：固定档取指定值、自动档问子控件、按权重档记 0。
+        // 按权重的子控件对「容器想要多大」没有贡献 —— 它要多少取决于容器
+        // 最终有多大，反过来问它会形成循环。
+        int mainPx = HintFixedMainPx(h, up.get(), /*bHorizontal=*/true);
         mainSum += mainPx + h.marginL + h.marginR;
 
         // Cross axis (Y for HBox): fixedCross wins if set, otherwise ask the
@@ -297,10 +406,10 @@ void DuiVBox::Layout(const RECT& rcAvail)
         }
         ++visN;
         Hint h = HintFor(up.get());
-        int chunk = (h.fixedMain >= 0) ? h.fixedMain : 0;
+        int chunk = HintFixedMainPx(h, up.get(), /*bHorizontal=*/false);
         chunk += h.marginT + h.marginB;
         fixedSum += chunk;
-        if (h.fixedMain < 0)
+        if (HintIsWeighted(h))
         {
             weightSum += (h.weight > 0 ? h.weight : 1);
         }
@@ -333,9 +442,10 @@ void DuiVBox::Layout(const RECT& rcAvail)
 
         Hint h = HintFor(up.get());
         int mainPx;
-        if (h.fixedMain >= 0)
+        if (!HintIsWeighted(h))
         {
-            mainPx = h.fixedMain + h.marginT + h.marginB;
+            mainPx = HintFixedMainPx(h, up.get(), /*bHorizontal=*/false)
+                   + h.marginT + h.marginB;
         }
         else
         {
@@ -363,7 +473,10 @@ SIZE DuiVBox::GetDesiredSize() const
         ++visN;
         Hint h = HintFor(up.get());
 
-        int mainPx = (h.fixedMain >= 0) ? h.fixedMain : 0;
+        // 主轴（竖直布局是 Y）：固定档取指定值、自动档问子控件、按权重档记 0。
+        // 理由同水平布局那一处：按权重的子控件要多少取决于容器最终有多大，
+        // 反过来问它会形成循环。
+        int mainPx = HintFixedMainPx(h, up.get(), /*bHorizontal=*/false);
         mainSum += mainPx + h.marginT + h.marginB;
 
         // Cross axis (X for VBox): fixedCross wins if set, otherwise ask the

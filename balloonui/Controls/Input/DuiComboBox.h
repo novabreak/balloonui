@@ -14,6 +14,46 @@ class DuiEditHost;
 class DuiComboEdit;
 
 // =================================================================
+// combopopup —— 下拉浮层的落点计算
+//
+// 单拎出来是为了能被单元测试直接断言：真正弹浮层要建顶层窗口、要问
+// 显示器，测不了；而"该落在哪儿"完全是算术，把工作区当参数传进来就
+// 成了纯函数。DuiComboBox::OpenPopup 先查当前显示器的工作区，再调
+// 本函数，两边用的是同一段逻辑。
+// =================================================================
+namespace combopopup {
+
+// 浮层窗口上下边框各占 1 像素，故按整行数算出高度后还要补上这 2 像素，
+// 否则最后一行会被边框压掉一截。
+const int kPopupBorderThickness = 2;
+
+// 浮层至少要露出的行数。工作区实在太矮（任务栏很高、下拉框又在屏幕中间）
+// 时也不该把浮层压成一条缝 —— 列表本身能滚，露一行就还能用。
+const int kPopupMinRows = 1;
+
+/**
+ *  算下拉浮层最终该落在屏幕的什么位置。
+ *
+ *  规则：默认贴在下拉框正下方、与其同宽；下方装不下就翻到上方；上下都装不下
+ *  就选空间大的那一侧，并把高度压到那一侧能容纳的整行数 —— 浮层内部的列表本身
+ *  能滚（见 DuiComboBoxPopup::OnMouseWheel），压矮只是少露几行，不会让哪一项
+ *  彻底够不着。左右方向同样夹进工作区，免得下拉框贴着屏幕右缘时浮层探出去。
+ *
+ *    comboScreen：下拉框自身的矩形，屏幕坐标，即浮层的锚点。
+ *    popupW：     浮层期望宽度（逻辑像素），一般与下拉框同宽。
+ *    popupH：     浮层期望高度（逻辑像素），= 行数 * itemH + kPopupBorderThickness。
+ *                 空间不足时本函数会把它压小。
+ *    itemH：      单行行高（逻辑像素），用于把可用高度换算成整行数；须大于 0。
+ *    work：       目标显示器的工作区（已排除任务栏），屏幕坐标。
+ *  @return 夹取后的浮层矩形，屏幕坐标；保证完全落在 work 之内（work 本身
+ *          比一行还矮这种极端情况除外，此时至少保证左上角在 work 内）。
+ */
+RECT ClampPopupToWorkArea(const RECT& comboScreen, int popupW, int popupH,
+                          int itemH, const RECT& work);
+
+} // namespace combopopup
+
+// =================================================================
 // DuiComboBox —— 下拉选择框（含弹出 popup HWND）
 // =================================================================
 //
@@ -24,19 +64,21 @@ class DuiComboEdit;
 // 两种风格：
 //   · StyleReadOnly（默认）：主体自绘，画选中项文本 + 箭头；不可手输入。
 //     等价于 Win32 CBS_DROPDOWNLIST。
-//   · StyleEditable：主体左侧嵌一个真 EDIT HWND（DuiComboEdit，是
-//     DuiEditHost 子类），右侧 ~20px 是箭头区。可手输入（IME 正常工作
-//     因 EDIT 是真 HWND）；选 popup 项时把项文本写回 EDIT。
-//     等价于 Win32 CBS_DROPDOWN。
+//   · StyleEditable：主体左侧嵌一个无窗口输入框（DuiComboEdit，是
+//     DuiEditHost 子类），右侧 ~20px 是箭头区。可手输入；选 popup 项时
+//     把项文本写回该输入框。等价于 Win32 CBS_DROPDOWN。
 //
 // 工作机制：
-//   · combo 主体本身是 paint-only DUI；editable 风格额外加一个 EDIT
-//     HWND 子（通过 DuiComboEdit 管理，挂在 m_children 里）。
+//   · combo 主体本身是 paint-only DUI；editable 风格额外加一个无窗口
+//     输入框子控件（DuiComboEdit，挂在 m_children 里）。它没有自己的
+//     窗口，像素由 combo 的 OnPaint 递归画出 —— 铺完主体底色之后、画
+//     下拉箭头之前。
 //   · popup 是独立 WS_POPUP HWND，可超出对话框边界。关闭时机：选项 /
 //     ESC / 失焦 / 又一次 OpenPopup 调用。ClosePopup 是 idempotent。
 //   · 选项以 CString 列表存；AddString 返回新索引。SetText 在 editable
 //     模式下<u>不</u>会触发 VALUECHANGED（m_suppressEditNotify 抑制）。
-//   · SetEditable 任何时候都可调；嵌套 EDIT 按需懒创建 / 销毁。
+//   · SetEditable 任何时候都可调；内嵌输入框按需创建 / 销毁。无窗口控件
+//     构造完就能用，不再有「等宿主窗口就绪之后才能创建」这一步。
 //   · 增量搜索（incremental search）：editable 模式下用户每键，弹出列表
 //     按"前缀 / 子串 + 区分大小写 / 不区分"过滤。默认 prefix +
 //     case-insensitive。
@@ -67,6 +109,15 @@ class DuiComboEdit;
 //                          extra == -1：editable 模式手输入触发；m_curSel
 //                                      被重置为 -1，除非输入文本完全匹配
 //                                      某个 item（这种情况会自动选中那个 item）。
+//   · DUICBN_ITEMDELETE — 下拉里点了某项右侧的删除叉；extra = 项索引
+//                          （已映射回 m_items 下标，过滤态下也对得上）。
+//                          仅在 SetShowItemDelete(true) 时可能触发。本控件
+//                          <u>不删</u>那一项，收到通知的宿主自行决定是否二次
+//                          确认、确认后再调 DeleteString。
+//                          <b>宿主处理本通知时不得同步弹模态对话框</b>：通知是
+//                          在下拉浮层的消息栈里发出的，模态对话框一泵消息，浮层
+//                          就会因失去焦点而自我销毁，等模态框返回时浮层对象已经
+//                          没了。要弹框请先 PostMessage 给自己、延后一拍再弹。
 //
 // 替代关系：CSkinComboBox（冻结 API：AddString / DeleteString /
 // ResetContent / GetCount / GetItemText / SetCurSel / GetCurSel；
@@ -75,6 +126,12 @@ class BUI_API DuiComboBox : public DuiControl
 {
 public:
     enum Style { StyleReadOnly = 0, StyleEditable = 1 };
+
+    enum NotifyCode
+    {
+        // 下拉项右侧的删除叉被点击；extra = 项索引。
+        DUICBN_ITEMDELETE = DUIN_CUSTOM + 1,
+    };
 
     DuiComboBox();
     ~DuiComboBox() override;
@@ -105,6 +162,17 @@ public:
     // 像纯输入框，但点击右侧箭头区域仍可弹出下拉列表。
     void     SetShowArrow(bool b);
     bool     IsShowArrow() const { return m_showArrow; }
+
+    // 是否在下拉列表每一项右侧画删除叉（默认 false，画出来与不开时完全一致）。
+    //
+    // 开启后下拉里每行右端出现一个淡灰色的 ×：鼠标移到该行时加深、直接压在叉上
+    // 变红；点它发 DUICBN_ITEMDELETE（extra = 项索引）并<u>不改变当前选项</u>。
+    // 典型用途是登录框的账号历史下拉 —— 让用户删掉不再用的账号。
+    //
+    // 本控件收到点击只发通知、不动 model：要不要二次确认、确认后除了 DeleteString
+    // 还要清理什么（本地聊天记录、缓存目录…），都属于业务决定。
+    void     SetShowItemDelete(bool b);
+    bool     IsShowItemDelete() const { return m_showItemDelete; }
 
     // 设置 / 读取右侧下拉箭头的颜色（默认 RGB(80,100,140) 蓝灰色）。
     // 仅覆盖 enabled 态;disabled 态沿用内部 kArrowDisabled = RGB(160,160,160)
@@ -187,6 +255,23 @@ public:
     // OnEditTextChanged 调。
     std::vector<int> ComputeFilteredIndices(LPCTSTR query) const;
 
+    // 把下拉浮层里的项下标映射回 m_items 的下标（纯函数版）。
+    //
+    // 增量搜索过滤激活时，浮层只显示命中的那几项，它报回来的下标是"第几个命中
+    // 项"而不是"m_items 的第几项"；不映射就会张冠李戴 —— 选中会选错人、删除
+    // 会删错人。过滤未激活（映射表为空）时两者本来就 1:1，原样返回。
+    //   popupIndex：浮层里的项下标。
+    //   filteredIndices：过滤映射表（第 k 个命中项对应 m_items 的哪个下标）；
+    //                    空表示未过滤。
+    //   返回：m_items 里的下标；popupIndex 越出映射表范围时原样返回，
+    //         由调用方自己判越界。
+    static int MapPopupIndexWithFilter(int popupIndex,
+                                       const std::vector<int>& filteredIndices);
+
+    // 上面那个的成员版：按本 combo 当前的过滤态做映射。
+    // 运行时由 OnPopupSelected / OnPopupItemDelete 调。
+    int     MapPopupIndexToItem(int popupIndex) const;
+
     // ---- DuiControl 覆写 ----
     void    Layout(const RECT& rcAvail) override;
     void    OnPaint(HDC hdc, const RECT& rcDirty) override;
@@ -195,11 +280,18 @@ public:
     // popup 选中某项时回调（popup 内部调）。
     void    OnPopupSelected(int index);
 
+    // popup 里点了某项的删除叉时回调（popup 内部调）。把它按本 combo 的 ctrlId
+    // 冒成 DUICBN_ITEMDELETE 通知给宿主，自己<u>不删</u>任何项。
+    //   index：被点的项在<u>浮层里</u>的下标；过滤激活时本方法会先映射回 m_items
+    //          的真实下标，再据此上报。
+    void    OnPopupItemDelete(int index);
+
     // popup 关闭时回调。
     void    OnPopupClosed();
 
-    // 嵌入 EDIT 的 EN_CHANGE 触发时回调。重置 m_curSel（除非输入文本
-    // 完全匹配某项），并按 combo 的 ctrlId 冒一个 VALUECHANGED 通知。
+    // 内嵌输入框的文字发生变化时回调（由 DuiComboEdit::OnTextChanged 转来，
+    // 用户输入与程序设值都会触发）。重置 m_curSel（除非输入文本完全匹配某项），
+    // 并按 combo 的 ctrlId 冒一个 VALUECHANGED 通知。
     void    OnEditTextChanged();
 
 private:
@@ -220,6 +312,7 @@ private:
     COLORREF              m_bgColor      = RGB(255, 255, 255);  // 主体底色
     bool                  m_showBorder   = true;                // 是否描 1px 边框
     bool                  m_showArrow    = true;                // 是否画下拉箭头
+    bool                  m_showItemDelete = false;             // 下拉项右侧是否画删除叉
     COLORREF              m_arrowColor   = RGB( 80, 100, 140);  // 下拉箭头 enabled 态色;默认蓝灰
 
     DuiComboBoxPopup*     m_popup        = nullptr;

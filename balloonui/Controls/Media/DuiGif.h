@@ -24,8 +24,8 @@ namespace balloonwjui {
 //   · 每帧延迟从 GIF 的 PropertyTagFrameDelay 拿（10ms 单位）。0 延迟
 //     被 clamp 到 100ms（与浏览器行为一致）。
 //   · 动画时间是单调毫秒（caller 驱动 Tick）；DuiGifControl 把它包进
-//     DuiAnimMgr，让 DuiGallery / 主对话框靠 host 的 shared pulse 不需要
-//     per-control WM_TIMER。
+//     DuiAnimMgr，由 DuiAnimMgr 的共享脉冲定时器统一推进，DuiGallery /
+//     主对话框都不需要 per-control WM_TIMER。
 //
 // 工作机制：
 //   · 纯数据持有：LoadFromFile 用 GDI+ 急切解码，每帧缓存一个 HBITMAP。
@@ -97,8 +97,9 @@ private:
 //
 // 工作机制：
 //   · 纯绘制 DuiControl；通过 SetGif 拿走 DuiGif 的所有权。
-//   · Start() 注册到 DuiAnimMgr，让播放靠 host shared animation pulse
-//     驱动（不需要 per-control WM_TIMER）。Stop() 暂停但保留当前帧不变。
+//   · Start() 注册到 DuiAnimMgr，让播放靠 DuiAnimMgr 的共享 16ms 脉冲
+//     驱动（不需要 per-control WM_TIMER，也不需要 host 自己挂 timer）。
+//     Stop() 暂停但保留当前帧不变。
 //   · Stretch（默认）= 拉伸适配 m_rcItem；非 stretch = 1:1 居中。
 //
 // 代码用法：

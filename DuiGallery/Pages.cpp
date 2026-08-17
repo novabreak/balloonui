@@ -21,7 +21,8 @@
 #include "DuiTheme.h"
 #include "Controls/Basic/DuiLabel.h"
 #include "Controls/Input/DuiEditHost.h"
-#include "Controls/Input/DuiRichEditHost.h"
+#include "Controls/Input/DuiEdit.h"
+#include "Controls/Input/DuiRichEdit.h"
 #include "DuiPaintAA.h"
 
 #include <functional>
@@ -1477,6 +1478,311 @@ std::unique_ptr<DuiControl> Build_Edit()
     return page;
 }
 
+// ===== DuiEdit（无窗口普通输入框）=====================================
+//
+// 本页演示的是无窗口的普通输入框 DuiEdit，与上一页的 Edit 是两个不同的
+// 控件：上一页那个内嵌了一个真的 Win32 输入框子窗口，本页这个纯粹画在
+// DUI 合成层上。两页并排看即可对比 —— 子窗口永远画在最上层、不受父容器
+// 裁剪、进不了滚动容器，而本控件是 DUI 树里的普通一员。
+//
+// DuiEdit 是 DuiRichEdit 的子类：排版、光标、选区、输入法、剪贴板、右键
+// 菜单全部由基类提供，本类只补上"普通输入框"多出来的语义 —— 单行回车不
+// 换行、左右内联图标栏、密码显隐切换按钮、单行文字垂直居中。
+
+namespace {
+
+#if BUI_FEATURE_EDIT
+
+// 本页演示图标统一使用的颜色：偏冷的中性灰。在白色底上看得清，又不会比
+// 输入的文字更抢眼。
+const COLORREF kDemoIconColor = RGB(120, 120, 130);
+
+// 放大镜镜片的半径（像素）。
+const int kDemoMagnifierRadiusPx = 5;
+
+// 放大镜镜柄相对镜片圆心的起止偏移（像素），斜向右下甩出一小段。
+const int kDemoHandleBeginPx = 3;
+const int kDemoHandleEndPx   = 7;
+
+// 叉号一笔的半边长（像素），即从图标中心到笔画端点的水平/垂直距离。
+const int kDemoCrossHalfPx = 5;
+
+// 演示图标线条的笔宽（像素），与库内 DuiSearchBox 的取值保持一致。
+const float kDemoStrokeWidth = 1.5f;
+
+// 左侧图标的画法：画一个放大镜，表示这是一个搜索用的输入框。
+// 本函数作为 DuiEdit::IconPainter 交给控件，控件在每次重绘时调用它。
+//   hdc：绘制目标，坐标系是宿主窗口客户区坐标。
+//   rc：本次该画的图标矩形（控件已扣掉边框与上下内边距），同一坐标系。
+void PaintDemoMagnifier(HDC hdc, const RECT& rc)
+{
+    const int nCenterX = (rc.left + rc.right) / 2;
+    const int nCenterY = (rc.top + rc.bottom) / 2;
+    const int nRadius  = kDemoMagnifierRadiusPx;
+
+    // 镜片：填充色传 CLR_INVALID 表示只描边、不填充。整体上移一像素，
+    // 让加上镜柄之后的图形在视觉上仍然居中。
+    RECT rcCircle = { nCenterX - nRadius, nCenterY - nRadius - 1,
+                      nCenterX + nRadius, nCenterY + nRadius - 1 };
+    DuiAA::FillEllipse(hdc, rcCircle, CLR_INVALID, kDemoIconColor, kDemoStrokeWidth);
+
+    // 镜柄：从镜片右下方斜着甩出去的一小段直线。
+    DuiAA::DrawLine(hdc,
+                    nCenterX + kDemoHandleBeginPx, nCenterY + kDemoHandleBeginPx,
+                    nCenterX + kDemoHandleEndPx,   nCenterY + kDemoHandleEndPx,
+                    kDemoIconColor, kDemoStrokeWidth);
+}
+
+// 右侧图标的画法：画一个叉号。本页把它设成可点击，点击后清空文本。
+//   hdc：绘制目标，坐标系是宿主窗口客户区坐标。
+//   rc：本次该画的图标矩形，同一坐标系。
+void PaintDemoClearCross(HDC hdc, const RECT& rc)
+{
+    const int nCenterX = (rc.left + rc.right) / 2;
+    const int nCenterY = (rc.top + rc.bottom) / 2;
+    const int nHalf    = kDemoCrossHalfPx;
+
+    DuiAA::DrawLine(hdc, nCenterX - nHalf, nCenterY - nHalf,
+                    nCenterX + nHalf, nCenterY + nHalf,
+                    kDemoIconColor, kDemoStrokeWidth);
+    DuiAA::DrawLine(hdc, nCenterX + nHalf, nCenterY - nHalf,
+                    nCenterX - nHalf, nCenterY + nHalf,
+                    kDemoIconColor, kDemoStrokeWidth);
+}
+
+// 本页「右侧可点击图标」那一组的通知接收器。
+//
+// 演示程序里控件的通知走 GalleryFrame::OnDuiNotify → Pages::g_pageNotifyHook
+// 这条路，与业务窗口自己收 WM_DUI_NOTIFY 是同一回事。这里写成具名仿函数
+// 而不是 lambda，是为了让判定条件与它持有的控件指针一目了然。
+class EditNotifyWatcher
+{
+public:
+    // pEdit：带右侧叉号的那个输入框，非空；生存期由页面持有，本类只借用，
+    //        既不复制也不释放。
+    // uCtrlId：pEdit 的控件编号，用来把它的通知与页内其它控件区分开。
+    // pStatus：显示最近一次收到的通知的标签，非空；同样只借用不释放。
+    EditNotifyWatcher(DuiEdit* pEdit, UINT uCtrlId, DuiLabel* pStatus)
+        : m_pEdit(pEdit)
+        , m_uCtrlId(uCtrlId)
+        , m_pStatus(pStatus)
+    {
+    }
+
+    // 通知入口，由页面钩子逐条转发进来。
+    //   n：通知结构，可能为空（钩子的调用方不保证非空）。
+    void operator()(const balloonwjui::DuiNotify* n)
+    {
+        if (n == nullptr || m_pEdit == nullptr || m_pStatus == nullptr)
+        {
+            return;
+        }
+
+        // 控件编号必须与通知码写在同一个条件里。库里的自定义通知码是按控件
+        // 各自编号的，每个控件都从 DUIN_CUSTOM 起算，不同控件的同一档自定义
+        // 码数值必然相同 —— 只比通知码就会把别的控件的通知一并收下。
+        if (n->code == (UINT)DuiEdit::DUIN_EDIT_RIGHT_ICON_CLICK
+            && n->ctrlId == m_uCtrlId)
+        {
+            m_pEdit->SetText(_T(""));
+            m_pStatus->SetText(_T("收到 DUIN_EDIT_RIGHT_ICON_CLICK：已清空文本"));
+        }
+        else if (n->code == (UINT)DuiEdit::DUIN_EDIT_ENTER
+                 && n->ctrlId == m_uCtrlId)
+        {
+            m_pStatus->SetText(_T("收到 DUIN_EDIT_ENTER：单行模式下回车不换行，改发通知"));
+        }
+        else if (n->code == (UINT)DuiEdit::DUIN_EDIT_ESCAPE
+                 && n->ctrlId == m_uCtrlId)
+        {
+            m_pStatus->SetText(_T("收到 DUIN_EDIT_ESCAPE：按下了 Esc"));
+        }
+    }
+
+private:
+    DuiEdit*  m_pEdit;      // 被演示的输入框，只借用不释放
+    UINT      m_uCtrlId;    // m_pEdit 的控件编号，用于区分通知来源
+    DuiLabel* m_pStatus;    // 显示通知文字的标签，只借用不释放
+};
+
+// 「右侧可点击图标」那一组里输入框的控件编号。本页只此一处需要按编号区分
+// 通知，取一个不与其它页面（700 / 900 段）冲突的值即可。
+const UINT kIdClearableEdit = 1101;
+
+#endif // BUI_FEATURE_EDIT
+
+} // anonymous
+
+std::unique_ptr<DuiControl> Build_EditWindowless()
+{
+    std::unique_ptr<DuiVBox> page = NewPage();
+
+#if BUI_FEATURE_EDIT
+    // ---- 一、基本单行输入框 ----
+    AddSection(page.get(),
+               _T("单行输入框 + 占位文字"),
+               _T("构造完即可用，不需要任何创建调用。空且未获得焦点时显示占位文字；")
+               _T("单行模式下文字默认在控件高度内垂直居中。"));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(12);
+
+        std::unique_ptr<DuiEdit> ePlaceholder(new DuiEdit());
+        ePlaceholder->SetPlaceholder(_T("请输入用户名"));
+        row->AddChild(std::move(ePlaceholder), DuiLayout::Hint().Weight(1));
+
+        std::unique_ptr<DuiEdit> ePrefilled(new DuiEdit());
+        ePrefilled->SetText(_T("已经填好的内容"));
+        // 最大长度由基类提供，超出部分直接拒绝输入。
+        ePrefilled->SetMaxLength(32);
+        row->AddChild(std::move(ePrefilled), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 30);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    // ---- 二、多行与垂直居中开关 ----
+    AddSection(page.get(),
+               _T("多行输入框（关掉垂直居中）"),
+               _T("左：SetMultiLine(true) + SetWordWrap(true)，多行永远从顶部开始排，")
+               _T("垂直居中设置对它无效果。右：单行但 SetVerticalCenter(false)，")
+               _T("文字贴着顶边排，与上一组的居中效果正好对照。"));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(12);
+
+        std::unique_ptr<DuiEdit> eMulti(new DuiEdit());
+        eMulti->SetMultiLine(true);
+        eMulti->SetWordWrap(true);
+        // 多行模式下本设置不起作用，写出来是为了明示这一页演示的就是它。
+        eMulti->SetVerticalCenter(false);
+        eMulti->SetPlaceholder(_T("多行纯文本：可以换行，可以用输入法，可以拖动选择"));
+        row->AddChild(std::move(eMulti), DuiLayout::Hint().Weight(1));
+
+        std::unique_ptr<DuiEdit> eTopAligned(new DuiEdit());
+        eTopAligned->SetVerticalCenter(false);
+        eTopAligned->SetText(_T("单行，文字贴顶"));
+        row->AddChild(std::move(eTopAligned), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 84);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    // ---- 三、密码框与显隐切换按钮 ----
+    AddSection(page.get(),
+               _T("密码框 + 显隐切换按钮"),
+               _T("左：SetPassword(true)，输入内容以遮蔽字符显示。")
+               _T("右：再加 SetShowEyeToggle(true)，右侧出现小眼睛按钮，")
+               _T("点一下在遮蔽与明文之间切换。两项设置随时可改，不必重建控件。"));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(12);
+
+        std::unique_ptr<DuiEdit> ePwd(new DuiEdit());
+        ePwd->SetPassword(true);
+        ePwd->SetPlaceholder(_T("密码"));
+        row->AddChild(std::move(ePwd), DuiLayout::Hint().Weight(1));
+
+        std::unique_ptr<DuiEdit> ePwdEye(new DuiEdit());
+        ePwdEye->SetPassword(true);
+        ePwdEye->SetShowEyeToggle(true);
+        ePwdEye->SetText(_T("secret-value"));
+        row->AddChild(std::move(ePwdEye), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 30);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    // ---- 四、左侧图标 ----
+    AddSection(page.get(),
+               _T("左侧内联图标"),
+               _T("SetIcon(LeftIcon, 宽度, 画法) 在文本左侧让出一条图标栏，")
+               _T("文本区自动内缩相应宽度。画法是一个普通的绘制回调，")
+               _T("用任何 GDI / GDI+ 接口画都行。默认不可点击，鼠标穿透到文本区定位光标。"));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(12);
+
+        std::unique_ptr<DuiEdit> eSearch(new DuiEdit());
+        eSearch->SetPlaceholder(_T("搜索联系人、消息、文件"));
+        eSearch->SetIcon(DuiEdit::LeftIcon, 28, &PaintDemoMagnifier);
+        row->AddChild(std::move(eSearch), DuiLayout::Hint().Weight(1));
+
+        // 另一种画法：直接给一小段文字当图标，省掉自己画的功夫。
+        std::unique_ptr<DuiEdit> eGlyph(new DuiEdit());
+        eGlyph->SetPlaceholder(_T("邮箱地址"));
+        eGlyph->SetIconGlyph(DuiEdit::LeftIcon, 24, _T("@"), kDemoIconColor);
+        row->AddChild(std::move(eGlyph), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 30);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    // ---- 五、右侧可点击图标与点击通知 ----
+    AddSection(page.get(),
+               _T("右侧可点击图标（点击发通知）"),
+               _T("SetIconClickable(RightIcon, true) 之后，鼠标移上去变成手形，")
+               _T("点击发出 DUIN_EDIT_RIGHT_ICON_CLICK。本页收到后把文本清空，")
+               _T("下方标签显示最近一次收到的通知。在框内按回车 / Esc 还能看到")
+               _T("DUIN_EDIT_ENTER 与 DUIN_EDIT_ESCAPE —— 单行模式下回车不换行，改发通知。"));
+    {
+        std::unique_ptr<DuiVBox> stack(new DuiVBox());
+        stack->SetGap(8);
+
+        std::unique_ptr<DuiEdit> eClearable(new DuiEdit());
+        eClearable->SetCtrlId(kIdClearableEdit);
+        eClearable->SetText(_T("点右边的叉号清空这里"));
+        eClearable->SetIcon(DuiEdit::RightIcon, 24, &PaintDemoClearCross);
+        eClearable->SetIconClickable(DuiEdit::RightIcon, true);
+        DuiEdit* pClearable = eClearable.get();
+        stack->AddChild(std::move(eClearable), DuiLayout::Hint().Fixed(30));
+
+        std::unique_ptr<DuiLabel> status(new DuiLabel());
+        status->SetText(_T("（还没有收到通知）"));
+        status->SetTextColor(RGB(120, 120, 120));
+        DuiLabel* pStatus = status.get();
+        stack->AddChild(std::move(status), DuiLayout::Hint().Fixed(20));
+
+        page->AddChild(std::move(stack), DuiLayout::Hint().Fixed(58));
+
+        // 注册页面通知钩子。切换到别的页面时 GalleryFrame 会把它清空，因此
+        // 上面两个裸指针不会在页面销毁之后被再次使用。
+        Pages::g_pageNotifyHook =
+            EditNotifyWatcher(pClearable, kIdClearableEdit, pStatus);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    // ---- 六、只读与禁用 ----
+    AddSection(page.get(),
+               _T("只读 / 禁用"),
+               _T("左：SetReadOnly(true)，不能改，但仍可点击、选择、复制，配色不变。")
+               _T("右：SetEnabled(false)，整体换成禁用配色（浅灰底 + 浅灰边框），")
+               _T("不接受任何输入。两者放在一起便于对比配色差别。"));
+    {
+        std::unique_ptr<DuiHBox> row(new DuiHBox());
+        row->SetGap(12);
+
+        std::unique_ptr<DuiEdit> eReadOnly(new DuiEdit());
+        eReadOnly->SetText(_T("只读：可以选中复制，不能修改"));
+        eReadOnly->SetReadOnly(true);
+        row->AddChild(std::move(eReadOnly), DuiLayout::Hint().Weight(1));
+
+        std::unique_ptr<DuiEdit> eDisabled(new DuiEdit());
+        eDisabled->SetText(_T("禁用：连焦点都拿不到"));
+        eDisabled->SetEnabled(false);
+        row->AddChild(std::move(eDisabled), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 30);
+    }
+#else
+    AddSection(page.get(),
+               _T("DuiEdit"),
+               _T("BUI_FEATURE_EDIT disabled - control unavailable in this build."));
+#endif // BUI_FEATURE_EDIT
+
+    return page;
+}
+
 // ===== RichEdit =======================================================
 
 namespace {
@@ -1535,126 +1841,344 @@ static HBITMAP MakeDemoBitmap()
 
 } // anonymous
 
-std::unique_ptr<DuiControl> Build_RichEdit()
+// ===== RichText（无窗口富文本控件 DuiRichEdit）=========================
+//
+// 本页演示的是**无窗口**的那个富文本控件，与上一页的 RichEdit 是两个不同
+// 的控件：上一页那个包着一个真的子窗口，本页这个纯粹画在 DUI 合成层上。
+//
+// 最直观的差别在第三节：真子窗口永远画在最上层，盖不住也被盖不住；
+// 本控件是 DUI 树里的普通一员，可以被后加的控件正常遮挡。
+
+std::unique_ptr<DuiControl> Build_RichText()
 {
     auto page = NewPage();
 
+#if BUI_FEATURE_RICHTEXT
     AddSection(page.get(),
-               _T("Multi-line + word wrap"),
-               _T("HWND-hosted RICHEDIT50W (msftedit.dll). Default Microsoft YaHei 9pt."));
+               _T("Basic editing (windowless)"),
+               _T("Click to place caret, type, select with mouse. No child HWND involved."));
     {
-        auto row = std::unique_ptr<DuiHBox>(new DuiHBox()); row->SetGap(12);
-        auto e = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        e->SetPlaceholder(_T("type a paragraph - it will wrap to fit..."));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-        AddVariantRow(page.get(), std::move(row), 120);
-    }
-    AddGap(page.get(), kSectionGap);
-
-    AddSection(page.get(),
-               _T("Pre-filled with default text color"),
-               _T("SetTextColor(RGB) drives the default CHARFORMAT2 fg. Affects newly typed text."));
-    {
-        auto row = std::unique_ptr<DuiHBox>(new DuiHBox()); row->SetGap(12);
-        auto e = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        e->SetTextColor(RGB(45, 108, 223));
-        e->SetText(_T("Brand-blue default text. Append more characters to confirm the color sticks."));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        row->SetGap(12);
+        auto re = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        re->SetMultiLine(true);
+        re->SetWordWrap(true);
+        re->SetText(_T("Click here and start typing. Select with the mouse."));
+        row->AddChild(std::move(re), DuiLayout::Hint().Weight(1));
         AddVariantRow(page.get(), std::move(row), 100);
     }
     AddGap(page.get(), kSectionGap);
 
     AddSection(page.get(),
-               _T("Auto URL detect"),
-               _T("SetAutoUrlDetect(true). RichEdit auto-styles URLs blue+underlined and fires EN_LINK on click. The host forwards as DUIN_RE_LINKCLICK."));
+               _T("Placeholder + read-only + no border"),
+               _T("Left: empty shows placeholder. Middle: read-only. Right: borderless, blends in."));
     {
-        auto row = std::unique_ptr<DuiHBox>(new DuiHBox()); row->SetGap(12);
-        auto e = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        e->SetAutoUrlDetect(true);
-        e->SetText(_T("Visit https://example.com or http://github.com for details."));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        row->SetGap(12);
+
+        auto reEmpty = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reEmpty->SetPlaceholder(_T("type a message..."));
+        row->AddChild(std::move(reEmpty), DuiLayout::Hint().Weight(1));
+
+        auto reReadOnly = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reReadOnly->SetText(_T("Read-only: caret hidden, text still selectable."));
+        reReadOnly->SetReadOnly(true);
+        row->AddChild(std::move(reReadOnly), DuiLayout::Hint().Weight(1));
+
+        auto reNoBorder = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reNoBorder->SetText(_T("No border, blends into the page background."));
+        reNoBorder->SetShowBorder(false);
+        reNoBorder->SetBackgroundColor(RGB(245, 246, 248));
+        reNoBorder->SetFocusable(false);
+        row->AddChild(std::move(reNoBorder), DuiLayout::Hint().Weight(1));
+
         AddVariantRow(page.get(), std::move(row), 80);
     }
     AddGap(page.get(), kSectionGap);
 
     AddSection(page.get(),
-               _T("Read-only"),
-               _T("SetReadOnly(true). User can select + copy + scroll, but no input. Suitable for the chat-history pane."));
+               _T("Z-order: can be covered by later siblings"),
+               _T("The blue strip is a plain DuiControl added AFTER the editor, so it paints on top. ")
+               _T("With the HWND-hosted RichEdit this is impossible - a child window always wins."));
     {
-        auto row = std::unique_ptr<DuiHBox>(new DuiHBox()); row->SetGap(12);
-        auto e = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        e->SetText(_T("This pane is read-only. Try to select + copy a phrase: works. Try to type: nothing."));
-        e->SetReadOnly(true);
-        e->SetBackgroundColor(RGB(248, 248, 250));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-        AddVariantRow(page.get(), std::move(row), 100);
+        // 用一个绝对定位的容器把编辑框和一个色块叠在一起。色块后加，
+        // 因此画在上层 —— 这正是真子窗口做不到的事。
+        class OverlapBox : public DuiControl
+        {
+        public:
+            void OnPaint(HDC hdc, const RECT& rcDirty) override
+            {
+                DuiControl::OnPaint(hdc, rcDirty);
+            }
+            void Layout(const RECT& rcAvail) override
+            {
+                m_rcItem = rcAvail;
+                // 给子控件定位要用 SetRect —— Layout 只负责把区域分给
+                // 子控件的子控件，不设置自身矩形。用错的话子控件矩形恒为空，
+                // 什么也画不出来。
+                if (m_children.size() >= 1)
+                {
+                    m_children[0]->SetRect(rcAvail);
+                }
+                if (m_children.size() >= 2)
+                {
+                    RECT rc = rcAvail;
+                    rc.left = rcAvail.left + (rcAvail.right - rcAvail.left) / 2;
+                    rc.top += 12;
+                    rc.bottom -= 12;
+                    m_children[1]->SetRect(rc);
+                }
+            }
+        };
+
+        class ColorStrip : public DuiControl
+        {
+        public:
+            void OnPaint(HDC hdc, const RECT&) override
+            {
+                HBRUSH hbr = ::CreateSolidBrush(RGB(45, 108, 223));
+                ::FillRect(hdc, &m_rcItem, hbr);
+                ::DeleteObject(hbr);
+            }
+        };
+
+        auto box = std::unique_ptr<OverlapBox>(new OverlapBox());
+        auto re = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        re->SetMultiLine(true);
+        re->SetWordWrap(true);
+        re->SetText(_T("This text runs under the blue strip on the right half. ")
+                    _T("A windowless control participates in the DUI z-order like any ")
+                    _T("other control, so the strip added after it paints on top."));
+        box->AddChild(std::move(re));
+        box->AddChild(std::unique_ptr<DuiControl>(new ColorStrip()));
+        page->AddChild(std::move(box), DuiLayout::Hint().Fixed(90));
     }
     AddGap(page.get(), kSectionGap);
 
     AddSection(page.get(),
-               _T("Single line"),
-               _T("SetMultiLine(false). Caret cannot wrap; ES_AUTOHSCROLL kicks in for overflow."));
+               _T("Overlay scrollbar"),
+               _T("Scroll with the wheel. The bar floats ON the text - it never takes ")
+               _T("content width, so the wrap positions do not shift when it appears. ")
+               _T("Left: auto (default). Middle: always visible. Right: never shown ")
+               _T("(wheel still scrolls)."));
     {
-        auto row = std::unique_ptr<DuiHBox>(new DuiHBox()); row->SetGap(12);
-        auto e = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        e->SetMultiLine(false);
-        e->SetWordWrap(false);
-        e->SetPlaceholder(_T("rich single line"));
-        row->AddChild(std::move(e), DuiLayout::Hint().Weight(1));
-        AddVariantRow(page.get(), std::move(row), 28);
+        const TCHAR* kLongText =
+            _T("Windowless rich text can scroll. ")
+            _T("The quick brown fox jumps over the lazy dog. ")
+            _T("The quick brown fox jumps over the lazy dog. ")
+            _T("The quick brown fox jumps over the lazy dog. ")
+            _T("The quick brown fox jumps over the lazy dog. ")
+            _T("The quick brown fox jumps over the lazy dog. ")
+            _T("无窗口富文本控件同样可以滚动，滚动条浮在文字之上，不占内容宽度。");
+
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        row->SetGap(12);
+
+        auto reAuto = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reAuto->SetMultiLine(true);
+        reAuto->SetWordWrap(true);
+        reAuto->SetText(kLongText);
+        row->AddChild(std::move(reAuto), DuiLayout::Hint().Weight(1));
+
+        auto reAlways = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reAlways->SetMultiLine(true);
+        reAlways->SetWordWrap(true);
+        reAlways->SetVScrollPolicy(DuiRichEdit::kScrollBarAlways);
+        reAlways->SetText(kLongText);
+        row->AddChild(std::move(reAlways), DuiLayout::Hint().Weight(1));
+
+        auto reNever = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reNever->SetMultiLine(true);
+        reNever->SetWordWrap(true);
+        reNever->SetVScrollPolicy(DuiRichEdit::kScrollBarNever);
+        reNever->SetText(kLongText);
+        row->AddChild(std::move(reNever), DuiLayout::Hint().Weight(1));
+
+        AddVariantRow(page.get(), std::move(row), 90);
     }
     AddGap(page.get(), kSectionGap);
 
     AddSection(page.get(),
-               _T("Rich content insert (image / quote / file)"),
-               _T("Click a button to insert at the caret. Quote = U+2503 prefix + faded gray italic. File card = paperclip + size. Image = synthesized 240x180 demo bitmap pasted via clipboard CF_BITMAP round-trip."));
+               _T("Runtime property switching (no rebuild)"),
+               _T("Toggling multi-line / word-wrap / read-only keeps the content. ")
+               _T("The HWND-hosted control has to destroy and recreate its child window for this."));
     {
-        // The shared edit + the 3 action buttons go in a vertical mini-stack.
-        auto stack = std::unique_ptr<DuiVBox>(new DuiVBox()); stack->SetGap(8);
+        auto stack = std::unique_ptr<DuiVBox>(new DuiVBox());
+        stack->SetGap(8);
 
-        auto edit = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        edit->SetPlaceholder(_T("Place caret here, then click a button below."));
-        DuiRichEditHost* editPtr = edit.get();
+        auto edit = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        edit->SetMultiLine(true);
+        edit->SetWordWrap(true);
+        edit->SetText(_T("Toggle the switches below - this text must survive every toggle."));
+        DuiRichEdit* editPtr = edit.get();
         stack->AddChild(std::move(edit), DuiLayout::Hint().Weight(1));
 
-        auto btnRow = std::unique_ptr<DuiHBox>(new DuiHBox()); btnRow->SetGap(10);
+        auto btnRow = std::unique_ptr<DuiHBox>(new DuiHBox());
+        btnRow->SetGap(10);
 
-        auto bImg = std::unique_ptr<LambdaButton>(new LambdaButton());
-        bImg->SetText(_T("Insert image"));
-        bImg->SetOnClick([editPtr]()
+        auto bMulti = std::unique_ptr<LambdaButton>(new LambdaButton());
+        bMulti->SetText(_T("Multi-line"));
+        bMulti->SetOnClick([editPtr]()
         {
-            HBITMAP hbm = MakeDemoBitmap();
-            editPtr->InsertImageFromBitmap(hbm, 240, 180);
-            ::DeleteObject(hbm);
+            editPtr->SetMultiLine(!editPtr->IsMultiLine());
         });
-        btnRow->AddChild(std::move(bImg), DuiLayout::Hint().Fixed(140));
+        btnRow->AddChild(std::move(bMulti), DuiLayout::Hint().Fixed(110));
 
-        auto bQuote = std::unique_ptr<LambdaButton>(new LambdaButton());
-        bQuote->SetText(_T("Insert quote"));
-        bQuote->SetOnClick([editPtr]()
+        auto bWrap = std::unique_ptr<LambdaButton>(new LambdaButton());
+        bWrap->SetText(_T("Word wrap"));
+        bWrap->SetOnClick([editPtr]()
         {
-            editPtr->InsertQuoteBlock(
-                _T("Alice"),
-                _T("项目截止周五前完成,\n剩两个测试用例待补."));
+            editPtr->SetWordWrap(!editPtr->IsWordWrap());
         });
-        btnRow->AddChild(std::move(bQuote), DuiLayout::Hint().Fixed(140));
+        btnRow->AddChild(std::move(bWrap), DuiLayout::Hint().Fixed(110));
 
-        auto bFile = std::unique_ptr<LambdaButton>(new LambdaButton());
-        bFile->SetText(_T("Insert file card"));
-        bFile->SetOnClick([editPtr]()
+        auto bRead = std::unique_ptr<LambdaButton>(new LambdaButton());
+        bRead->SetText(_T("Read-only"));
+        bRead->SetOnClick([editPtr]()
         {
-            editPtr->InsertFileCard(_T("design_v3_final.zip"), 24ULL * 1024 * 1024 + 567 * 1024);
+            editPtr->SetReadOnly(!editPtr->IsReadOnly());
         });
-        btnRow->AddChild(std::move(bFile), DuiLayout::Hint().Fixed(160));
+        btnRow->AddChild(std::move(bRead), DuiLayout::Hint().Fixed(110));
 
-        // Filler so buttons left-align.
         btnRow->AddChild(std::unique_ptr<DuiControl>(new DuiControl()),
                          DuiLayout::Hint().Weight(1));
-
         stack->AddChild(std::move(btnRow), DuiLayout::Hint().Fixed(32));
-
-        page->AddChild(std::move(stack), DuiLayout::Hint().Fixed(220));
+        page->AddChild(std::move(stack), DuiLayout::Hint().Fixed(160));
     }
+    AddGap(page.get(), kSectionGap);
+
+    AddSection(page.get(),
+               _T("Context menu: default / appended / customized"),
+               _T("Right-click any box, or press the Menu key (Shift+F10) while it has focus. ")
+               _T("Left: the built-in menu. Middle: two appended custom items - the chosen id ")
+               _T("arrives at the parent window as a notification. Right: a subclass that trims ")
+               _T("and renames the built-in items."));
+    {
+        // 中间那个编辑框登记的两个自定义命令编号。
+        //
+        // 必须不小于 kRichEditMenuCustomBase（1000）—— 低于它会与内置命令
+        // 撞号，控件会拒绝登记。这两个值本身没有特别含义，业务自己定即可。
+        const UINT kCmdInsertStamp = balloonwjui::kRichEditMenuCustomBase + 1;
+        const UINT kCmdClearAll    = balloonwjui::kRichEditMenuCustomBase + 2;
+
+        // 第三层演示：子类化控件，在默认菜单基础上删项与改文案。
+        //
+        // 这正是「第二层定制」的写法 —— 先调基类拿到默认菜单，再在结果上
+        // 任意增删改。分隔条不必自己操心，控件在弹出前会统一规整，删项留下
+        // 的悬空分隔条会被自动去掉。
+        class TrimmedMenuRichEdit : public DuiRichEdit
+        {
+        protected:
+            void OnBuildContextMenu(
+                std::vector<balloonwjui::DuiRichEditMenuItem>& items) override
+            {
+                DuiRichEdit::OnBuildContextMenu(items);
+
+                // 去掉「粘贴为纯文本」和「删除」两项。倒着遍历，删掉元素
+                // 之后后面的下标不会错位。
+                for (int i = (int)items.size() - 1; i >= 0; --i)
+                {
+                    if (items[(size_t)i].m_separator)
+                    {
+                        continue;
+                    }
+                    if (items[(size_t)i].m_id == balloonwjui::kRichEditCmdPastePlain
+                        || items[(size_t)i].m_id == balloonwjui::kRichEditCmdDelete)
+                    {
+                        items.erase(items.begin() + i);
+                    }
+                }
+
+                // 把「全选」改个说法，演示改文案。
+                for (size_t i = 0; i < items.size(); ++i)
+                {
+                    if (!items[i].m_separator
+                        && items[i].m_id == balloonwjui::kRichEditCmdSelectAll)
+                    {
+                        items[i].m_text = _T("选中全文(&A)");
+                    }
+                }
+            }
+        };
+
+        auto stack = std::unique_ptr<DuiVBox>(new DuiVBox());
+        stack->SetGap(8);
+
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        row->SetGap(12);
+
+        // ---- 左：默认菜单，一行代码都不用写 ----
+        auto reDefault = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reDefault->SetMultiLine(true);
+        reDefault->SetWordWrap(true);
+        reDefault->SetText(_T("Right-click me: undo / redo / cut / copy / paste / ")
+                           _T("paste as plain text / delete / select all."));
+        row->AddChild(std::move(reDefault), DuiLayout::Hint().Weight(1));
+
+        // ---- 中：默认菜单 + 两个追加项 ----
+        auto reAppended = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        reAppended->SetMultiLine(true);
+        reAppended->SetWordWrap(true);
+        reAppended->SetText(_T("Right-click me: two extra items at the bottom."));
+        reAppended->AppendContextMenuItem(kCmdInsertStamp, _T("插入时间戳"));
+        reAppended->AppendContextMenuItem(kCmdClearAll,    _T("清空全文"));
+        DuiRichEdit* pAppended = reAppended.get();
+        row->AddChild(std::move(reAppended), DuiLayout::Hint().Weight(1));
+
+        // ---- 右：子类裁剪过的菜单 ----
+        auto reTrimmed = std::unique_ptr<TrimmedMenuRichEdit>(new TrimmedMenuRichEdit());
+        reTrimmed->SetMultiLine(true);
+        reTrimmed->SetWordWrap(true);
+        reTrimmed->SetText(_T("Right-click me: no 'paste as plain text', no 'delete', ")
+                           _T("and 'select all' is renamed."));
+        row->AddChild(std::move(reTrimmed), DuiLayout::Hint().Weight(1));
+
+        stack->AddChild(std::move(row), DuiLayout::Hint().Weight(1));
+
+        // ---- 状态行：显示中间那个编辑框最近一次选中的自定义命令 ----
+        auto status = std::unique_ptr<DuiLabel>(new DuiLabel());
+        status->SetText(_T("(pick a custom item in the middle box)"));
+        status->SetTextColor(RGB(120, 120, 120));
+        DuiLabel* pStatus = status.get();
+        stack->AddChild(std::move(status), DuiLayout::Hint().Fixed(20));
+
+        page->AddChild(std::move(stack), DuiLayout::Hint().Fixed(150));
+
+        // 自定义项被选中时，控件把编号作为通知发给父窗口 —— 这是「第一层
+        // 定制」的完整路径，业务不必子类化控件。演示程序把通知转给页面钩子，
+        // 这里据编号执行对应动作。
+        Pages::g_pageNotifyHook =
+            [pAppended, pStatus, kCmdInsertStamp, kCmdClearAll]
+            (const balloonwjui::DuiNotify* n)
+            {
+                if (n == nullptr
+                    || n->code != (UINT)DuiRichEdit::DUIN_RICHTEXT_MENUCOMMAND)
+                {
+                    return;
+                }
+                const UINT nCmd = (UINT)n->extra;
+                if (nCmd == kCmdInsertStamp)
+                {
+                    SYSTEMTIME st;
+                    ::GetLocalTime(&st);
+                    CString text;
+                    text.Format(_T("[%02d:%02d:%02d]"), st.wHour, st.wMinute, st.wSecond);
+                    pAppended->ReplaceSel(text);
+                    pStatus->SetText(_T("custom command: insert timestamp"));
+                }
+                else if (nCmd == kCmdClearAll)
+                {
+                    pAppended->SetText(_T(""));
+                    pStatus->SetText(_T("custom command: clear all"));
+                }
+            };
+    }
+#else
+    AddSection(page.get(),
+               _T("DuiRichEdit"),
+               _T("BUI_FEATURE_RICHTEXT disabled - control unavailable in this build."));
+#endif
+
     return page;
 }
 
@@ -4629,7 +5153,8 @@ const PageInfo* GetPages(int& outCount)
         { _T("Badge"),        &Build_Badge        },
         { _T("Toast"),        &Build_Toast        },
         { _T("Edit"),         &Build_Edit         },
-        { _T("RichEdit"),     &Build_RichEdit     },
+        { _T("DuiEdit（无窗口）"), &Build_EditWindowless },
+        { _T("RichText"),     &Build_RichText     },
         { _T("ComboBox"),     &Build_ComboBox     },
         { _T("Slider"),       &Build_Slider       },
         { _T("Switch"),       &Build_Switch       },
@@ -5335,16 +5860,48 @@ std::unique_ptr<DuiControl> Build_DocCaptures()
     }
     AddGap(page.get(), kSectionGap);
 
-    AddSection(page.get(), _T("richedit-styles"),
-               _T("DuiRichEditHost — bold / italic / colored / link runs."));
+#if BUI_FEATURE_RICHTEXT
+    AddSection(page.get(), _T("richtext-basic"),
+               _T("DuiRichEdit (windowless) — plain text, border, default font."));
     {
         auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
-        auto re = std::unique_ptr<DuiRichEditHost>(new DuiRichEditHost());
-        re->SetText(_T("Plain. Bold. Italic. Colored. Link."));
-        row->AddChild(std::move(re), DuiLayout::Hint().Fixed(440));
-        AddVariantRowCapture(page.get(), _T("richedit-styles"), std::move(row), 50);
+        auto rt = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        rt->SetMultiLine(true);
+        rt->SetWordWrap(true);
+        rt->SetText(_T("Windowless rich text. 无窗口富文本控件。"));
+        row->AddChild(std::move(rt), DuiLayout::Hint().Fixed(440));
+        AddVariantRowCapture(page.get(), _T("richtext-basic"), std::move(row), 50);
     }
     AddGap(page.get(), kSectionGap);
+
+    AddSection(page.get(), _T("richtext-scrollbar"),
+               _T("DuiRichEdit (windowless) — overlay scrollbar, always visible."));
+    {
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        auto rt = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        rt->SetMultiLine(true);
+        rt->SetWordWrap(true);
+        rt->SetVScrollPolicy(DuiRichEdit::kScrollBarAlways);
+        rt->SetText(_T("The quick brown fox jumps over the lazy dog. ")
+                    _T("The quick brown fox jumps over the lazy dog. ")
+                    _T("The quick brown fox jumps over the lazy dog. ")
+                    _T("滚动条浮在文字之上，不占内容宽度。"));
+        row->AddChild(std::move(rt), DuiLayout::Hint().Fixed(440));
+        AddVariantRowCapture(page.get(), _T("richtext-scrollbar"), std::move(row), 70);
+    }
+    AddGap(page.get(), kSectionGap);
+
+    AddSection(page.get(), _T("richtext-placeholder"),
+               _T("DuiRichEdit (windowless) — empty document shows placeholder."));
+    {
+        auto row = std::unique_ptr<DuiHBox>(new DuiHBox());
+        auto rt = std::unique_ptr<DuiRichEdit>(new DuiRichEdit());
+        rt->SetPlaceholder(_T("type a message..."));
+        row->AddChild(std::move(rt), DuiLayout::Hint().Fixed(440));
+        AddVariantRowCapture(page.get(), _T("richtext-placeholder"), std::move(row), 50);
+    }
+    AddGap(page.get(), kSectionGap);
+#endif // BUI_FEATURE_RICHTEXT
 
     AddSection(page.get(), _T("scrollbar-states"),
                _T("DuiScrollBar — vertical / horizontal."));

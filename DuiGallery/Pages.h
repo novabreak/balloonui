@@ -39,7 +39,8 @@ std::unique_ptr<balloonwjui::DuiControl> Build_Label      ();
 std::unique_ptr<balloonwjui::DuiControl> Build_Badge      ();
 std::unique_ptr<balloonwjui::DuiControl> Build_Toast      ();
 std::unique_ptr<balloonwjui::DuiControl> Build_Edit       ();
-std::unique_ptr<balloonwjui::DuiControl> Build_RichEdit   ();
+std::unique_ptr<balloonwjui::DuiControl> Build_EditWindowless();   // 无窗口普通输入框 DuiEdit
+std::unique_ptr<balloonwjui::DuiControl> Build_RichText   ();   // 无窗口富文本控件 DuiRichEdit
 std::unique_ptr<balloonwjui::DuiControl> Build_ComboBox   ();
 std::unique_ptr<balloonwjui::DuiControl> Build_Slider     ();
 std::unique_ptr<balloonwjui::DuiControl> Build_Switch     ();

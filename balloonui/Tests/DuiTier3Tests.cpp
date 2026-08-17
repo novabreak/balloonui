@@ -5,10 +5,6 @@
  && BUI_FEATURE_SEARCHBOX && BUI_FEATURE_SPINBOX && BUI_FEATURE_SLIDER \
  && BUI_FEATURE_PROGRESSBAR && BUI_FEATURE_SCROLLBAR
 
-// For the HwndHostControl-clipped-to-ScrollView regression test.
-#include "../Controls/Input/DuiEditHost.h"
-#include "../DuiHost.h"
-
 namespace balloonwjui {
 
 namespace DuiTier3Tests {
@@ -446,12 +442,11 @@ static Result Test_SearchBoxClearVisibility()
 
 static Result Test_SearchBoxLayoutCarves()
 {
-    // M7+ 后 DuiSearchBox 是 DuiEditHost 子类，"内嵌 EDIT 子控件" 没了 ——
-    // GetEdit() 返 this，GetEdit()->GetRect() 返 sb 自己的 rect。新的
-    // "carve" 是内部 EDIT HWND 在 Layout 时被 inset 到 (left+border+
-    // marginL+iconL.width, top+..., right-border-marginR-iconR.width,
-    // bottom-...)。无 HWND 单测里只能验证 icon 宽度被 setter 正确记
-    // 录、IsClearShowing 行为正确。
+    // DuiSearchBox 现在直接继承普通输入框（本体是无窗口的 DuiEdit），早先
+    // "内嵌一个输入框子控件"的结构已经不存在 —— GetEdit() 返回 this，取到的
+    // 矩形就是搜索框自己的矩形。左右两侧让给放大镜与清除叉号的宽度，如今由
+    // 基类在布局时折算进文本区的内边距，整个过程不再涉及任何子窗口。因此本
+    // 用例验证的是两侧宽度被设置接口正确记录，以及清除叉号的显隐随文字变化。
     DuiSearchBox sb;
     sb.SetText(_T("xx"));
     sb.SetGlyphStripWidth(20);
@@ -466,6 +461,12 @@ static Result Test_SearchBoxLayoutCarves()
     return OK(_T("SearchBoxLayoutCarves"));
 }
 
+// 点击清除叉号：按下与抬起必须配对，缺一不可。
+//
+// 输入框无窗口化之后，图标点击改为「按下时记住落在哪个可点区域，抬起时校验
+// 抬起位置仍在同一区域」才算一次点击（DuiEdit 内部的 m_nPressedZone）。因此
+// 用例里那次 OnLButtonDown 不是多余的一行 —— 少了它，抬起时记录的区域是「没
+// 有按在任何可点区域上」，函数会直接落到基类，叉号的清空逻辑根本不会执行。
 static Result Test_SearchBoxClearClick()
 {
     DuiSearchBox sb;
@@ -473,6 +474,7 @@ static Result Test_SearchBoxClearClick()
     sb.Layout(RECT{ 0, 0, 200, 24 });
     RECT cr = sb.GetClearRect();
     POINT mid = { (cr.left + cr.right) / 2, (cr.top + cr.bottom) / 2 };
+    sb.OnLButtonDown(mid, 0);
     bool consumed = sb.OnLButtonUp(mid, 0);
     EXPECT_TRUE(consumed, _T("SBcc/consumed"));
     EXPECT_TRUE(sb.GetText().IsEmpty(), _T("SBcc/cleared"));
@@ -486,6 +488,81 @@ static Result Test_SearchBoxClearWidthClamps()
     sb.SetClearStripWidth(2);
     EXPECT_INT(sb.GetClearStripWidth(), 14, _T("SBcw/clamp"));
     return OK(_T("SearchBoxClearWidthClamps"));
+}
+
+// 逐字敲入与逐字删除时的重入路径。
+//
+// 搜索框在文字从空变成非空（或反过来）时要显示或隐藏清除叉号，这一步会改变
+// 右侧图标栏的宽度，进而重算文本区并把新的客户区矩形推给排版引擎。而触发它的
+// 时机来自引擎自己：用户敲一个字 → 引擎发出内容变化通知 → 控件的 OnTextChanged
+// 钩子 → 搜索框同步叉号 → 改引擎的排版区域。也就是说，我们是在引擎的回调栈里
+// 反过来改引擎的状态。
+//
+// 本用例把这条路径来回跑几轮，断言过程中不崩溃、每一轮之后文本内容正确、叉号
+// 该出现时出现该消失时消失。叉号的显隐通过右侧图标栏宽度是否为 0 观察 ——
+// IsClearShowing 内部判的就是这个宽度。
+static Result Test_SearchBoxTypingReentrancy()
+{
+    // 来回「敲满再删空」的轮数。跑多轮是为了让宽度在 0 与非 0 之间反复切换，
+    // 单跑一轮只能覆盖其中一个方向。
+    const int kRounds = 3;
+    // 每轮敲进去的文字，以及它的字符数。内容本身无所谓，只要非空。
+    LPCTSTR   kTyped    = _T("abc");
+    const int kTypedLen = 3;
+    // 控件矩形，够宽即可，避免文本区被算成负宽度而干扰观察。
+    const RECT kBoxRect = { 0, 0, 200, 24 };
+
+    DuiSearchBox sb;
+    sb.SetRect(kBoxRect);
+
+    for (int round = 0; round < kRounds; ++round)
+    {
+        // 逐个字符敲进去。第一个字符会让叉号出现，那一次就走完了整条重入路径。
+        for (int i = 0; i < kTypedLen; ++i)
+        {
+            sb.OnChar(kTyped[i]);
+        }
+        if (sb.GetText() != kTyped)
+        {
+            CString d;
+            d.Format(_T("round %d: expected[%s] got[%s]"),
+                     round, kTyped, (LPCTSTR)sb.GetText());
+            return Fail(_T("SBre/typedText"), d);
+        }
+        EXPECT_TRUE(sb.GetIconWidth(DuiSearchBox::RightIcon) > 0,
+                    _T("SBre/clearWidthNonZero"));
+        EXPECT_TRUE(sb.IsClearShowing(), _T("SBre/clearShowing"));
+
+        // 逐个字符退格删掉。最后一个退格让文字变空、叉号消失，走的是同一条
+        // 重入路径但方向相反（图标栏宽度从非 0 回到 0）。
+        //
+        // 退格必须先发按键消息再发字符消息，两条缺一不可：排版引擎会丢弃没有
+        // 配套按键消息的退格字符（DuiRichEditTests.cpp 里的换行用例对回车记录
+        // 了同样的现象）。只发字符消息时文字删不掉，本用例会误判成控件有问题。
+        for (int i = 0; i < kTypedLen; ++i)
+        {
+            sb.OnKeyDown(VK_BACK, 0);
+            sb.OnChar(_T('\b'));
+        }
+        if (!sb.GetText().IsEmpty())
+        {
+            CString d;
+            d.Format(_T("round %d: text not empty after backspaces, got[%s]"),
+                     round, (LPCTSTR)sb.GetText());
+            return Fail(_T("SBre/clearedText"), d);
+        }
+        EXPECT_INT(sb.GetIconWidth(DuiSearchBox::RightIcon), 0,
+                   _T("SBre/clearWidthZero"));
+        EXPECT_TRUE(!sb.IsClearShowing(), _T("SBre/clearHidden"));
+    }
+
+    // 再用程序设值走一遍。SetText 不经过引擎的通知回调，而是控件自己调
+    // OnTextChanged，与上面那条路径不同，一并覆盖。
+    sb.SetText(kTyped);
+    EXPECT_TRUE(sb.IsClearShowing(), _T("SBre/setTextShows"));
+    sb.SetText(_T(""));
+    EXPECT_TRUE(!sb.IsClearShowing(), _T("SBre/setTextHides"));
+    return OK(_T("SearchBoxTypingReentrancy"));
 }
 
 // ----- DuiSpinBox -----------------------------------------------------
@@ -733,611 +810,6 @@ static Result Test_VBoxDrivesScrollViewAutoHeight()
     return OK(_T("VBoxDrivesScrollViewAutoHeight"));
 }
 
-// ----- HwndHostControl-inside-ScrollView clipping regression --------
-//
-// What this guards: when a DuiScrollView contains a DUI subtree with an
-// HwndHostControl descendant (e.g. DuiEditHost / DuiRichEditHost), scrolling
-// changes the descendant's DUI rect to track the scrolled content. The real
-// Win32 EDIT/RICHEDIT HWND must be repositioned/clipped so its visible
-// pixels stay within the ScrollView's viewport — otherwise the slice of the
-// HWND that pokes above (or below) the viewport overpaints whatever sibling
-// is up there, and WS_CLIPCHILDREN on the host blocks the host's back-buffer
-// from cleaning it up. The visible bug for DuiGallery is on the
-// RichEdit/Edit pages: scrolling makes the EDIT's white background overdraw
-// the top of each tab label in the tab strip above the scroll view.
-//
-// The test is observable-property based, not implementation-shape based —
-// it asserts only "after scrolling, the EDIT's effective on-screen rect
-// stays inside the ScrollView's screen rect." A fix can ship as
-// SetWindowRgn, ShowWindow(SW_HIDE) when fully out, SetWindowPos to a
-// clipped rect, etc. — any of those make this test pass.
-//
-// "Effective on-screen rect" = HWND's screen window rect intersected with
-// its window region (if any), and considered empty if the HWND is hidden.
-
-static RECT GetEffectiveScreenRect_(HWND hwnd)
-{
-    RECT empty = { 0, 0, 0, 0 };
-    if (!::IsWindowVisible(hwnd))
-    {
-        return empty;
-    }
-    RECT rcWindow;
-    ::GetWindowRect(hwnd, &rcWindow);    // screen coords
-    HRGN rgn = ::CreateRectRgn(0, 0, 0, 0);
-    int rgnRes = ::GetWindowRgn(hwnd, rgn);
-
-    // GetWindowRgn return values to distinguish:
-    //   ERROR        — no window region set; the OS clips to the full HWND
-    //                  rect, so effective rect = rcWindow.
-    //   NULLREGION   — region is set AND empty; the HWND paints nothing,
-    //                  so effective rect is empty (NOT rcWindow!). Earlier
-    //                  bug here: lumped NULLREGION with ERROR and reported
-    //                  full rcWindow → "fully out" tests passed vacuously
-    //                  before the lib fix and reported false-leak after.
-    //   SIMPLEREGION / COMPLEXREGION — region has area; clip rcWindow to
-    //                  the region's bbox (translated from HWND-local to
-    //                  screen coords).
-    RECT result;
-    if (rgnRes == ERROR)
-    {
-        result = rcWindow;
-    }
-    else if (rgnRes == NULLREGION)
-    {
-        result = empty;
-    }
-    else
-    {
-        RECT rgnBox = empty;
-        ::GetRgnBox(rgn, &rgnBox);   // HWND-local
-        RECT rgnScreen = { rcWindow.left + rgnBox.left,
-                           rcWindow.top  + rgnBox.top,
-                           rcWindow.left + rgnBox.right,
-                           rcWindow.top  + rgnBox.bottom };
-        if (!::IntersectRect(&result, &rcWindow, &rgnScreen))
-        {
-            result = empty;
-        }
-    }
-    ::DeleteObject(rgn);
-    return result;
-}
-
-// Returns true iff `inner` is fully contained in `outer` (or `inner` is empty,
-// in which case there's trivially nothing to leak).
-static bool RectContains_(const RECT& outer, const RECT& inner)
-{
-    if (::IsRectEmpty(&inner))
-    {
-        return true;
-    }
-    return inner.left   >= outer.left
-        && inner.top    >= outer.top
-        && inner.right  <= outer.right
-        && inner.bottom <= outer.bottom;
-}
-
-// RAII fixture: hidden off-screen popup + DuiHost + a 36-px tab stub at top
-// and a DuiScrollView below. Caller fills `content` with whatever child mix
-// they want, then calls Realize() to attach the tree and run Layout. The
-// popup is shown off-screen (SW_SHOWNOACTIVATE at -20000,-20000) so chain
-// visibility evaluates TRUE for the EDIT — otherwise IsWindowVisible would
-// be FALSE and our effective-rect assertions would pass vacuously.
-struct HwndHostInScrollViewFixture
-{
-    HWND               hPopup  = nullptr;
-    DuiHost            host;
-    DuiScrollView*     svPtr   = nullptr;
-    DuiVBox*           content = nullptr;
-    // Hold ownership of the un-attached pieces between Init() and Realize().
-    // Without these, the local unique_ptrs in Init() would destroy the
-    // controls at end-of-scope and leave svPtr/content dangling.
-    std::unique_ptr<DuiVBox>       rootHolder;
-    std::unique_ptr<DuiScrollView> svHolder;
-    std::unique_ptr<DuiVBox>       contentHolder;
-
-    bool Init()
-    {
-        HINSTANCE hInst = ::GetModuleHandle(nullptr);
-        hPopup = ::CreateWindowEx(0, _T("STATIC"), _T(""),
-                                  WS_OVERLAPPED | WS_POPUP,
-                                  -20000, -20000, 400, 400, nullptr, nullptr,
-                                  hInst, nullptr);
-        if (!hPopup)
-        {
-            return false;
-        }
-        ::ShowWindow(hPopup, SW_SHOWNOACTIVATE);
-        host.Create(hPopup, RECT{ 0, 0, 400, 400 }, nullptr,
-                    WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0);
-
-        rootHolder.reset(new DuiVBox());
-        rootHolder->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(36));
-        svHolder.reset(new DuiScrollView());
-        svPtr = svHolder.get();
-        contentHolder.reset(new DuiVBox());
-        content = contentHolder.get();
-        return true;
-    }
-
-    // Hand `content` (caller-populated) over to the ScrollView, then the
-    // ScrollView over to the root, then root to the host. After this, layout
-    // has run and the EDIT(s) are at their initial positions.
-    void Realize()
-    {
-        svPtr->SetContent(std::move(contentHolder));
-        svPtr->SetAutoContentHeight(true);
-        rootHolder->AddChild(std::move(svHolder), DuiLayout::Hint().Weight(1));
-        host.SetRoot(std::move(rootHolder));
-        host.SetWindowPos(nullptr, 0, 0, 400, 400,
-                          SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-
-    RECT SvScreenRect() const
-    {
-        RECT r = svPtr->GetRect();
-        POINT lt = { r.left, r.top };
-        POINT rb = { r.right, r.bottom };
-        ::ClientToScreen(host.m_hWnd, &lt);
-        ::ClientToScreen(host.m_hWnd, &rb);
-        return { lt.x, lt.y, rb.x, rb.y };
-    }
-
-    ~HwndHostInScrollViewFixture()
-    {
-        // host's CWindow dtor doesn't tear down the HWND for us; rely on
-        // popup destruction to nuke the whole subtree.
-        if (hPopup)
-        {
-            ::DestroyWindow(hPopup);
-        }
-    }
-};
-
-// Wrong fixture init (CreateWindowEx fail) is rare but flag it instead of
-// silently degrading to vacuous-pass results.
-#define INIT_FIXTURE(fx, name) \
-    if (!fx.Init()) { return Fail(name, _T("fixture init failed")); }
-
-// Convenience: format a rect for the failure detail string.
-static CString FmtRectT3_(const RECT& r)
-{
-    CString s;
-    s.Format(_T("(%d,%d,%d,%d)"), r.left, r.top, r.right, r.bottom);
-    return s;
-}
-
-// ===== Case 1: fully scrolled out (top) ===============================
-//
-// EDIT is the FIRST content child; scroll-to-bottom puts it far above the
-// ScrollView. Without the fix, the OS still paints the EDIT at its full
-// position — overlapping siblings (in DuiGallery, the tab strip above sv).
-
-static Result Test_HwndHostInSV_FullyOut_Above()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("FullyOutAbove/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* editPtr = edit.get();
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-    fx.svPtr->SetScrollPos(fx.svPtr->GetScrollBar()->GetMax());
-
-    HWND hEdit = editPtr->GetHostedHwnd();
-    if (!hEdit) { return Fail(_T("FullyOutAbove/noHwnd"), _T("EDIT not created")); }
-
-    RECT editScreen = GetEffectiveScreenRect_(hEdit);
-    RECT svScreen   = fx.SvScreenRect();
-    if (!RectContains_(svScreen, editScreen))
-    {
-        CString d;
-        d.Format(_T("editScreen=%s leaks outside svScreen=%s"),
-                 (LPCTSTR)FmtRectT3_(editScreen), (LPCTSTR)FmtRectT3_(svScreen));
-        return Fail(_T("FullyOutAbove/leaks"), d);
-    }
-    return OK(_T("HwndHostInSV_FullyOut_Above"));
-}
-
-// ===== Case 2: partially out (top half above viewport) ================
-//
-// This is the exact shape of the DuiGallery RichEdit-page bug: the EDIT's
-// upper half projects into the tab-strip area above the ScrollView. The
-// HWND must be clipped (region) so its visible band stays inside the
-// ScrollView — without the fix, partial overlap leaks anyway because
-// the part of the HWND that's still in-view paints at full size.
-
-static Result Test_HwndHostInSV_PartiallyOut_Top()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("PartialTop/init"));
-
-    // Insert ~250 px of fillers BEFORE the EDIT so a moderate scroll puts
-    // the EDIT half-in / half-above the viewport.
-    for (int i = 0; i < 5; ++i)   // 5 × 50 = 250 px
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(50));
-    }
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* editPtr = edit.get();
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 10; ++i)  // fill the rest so content > viewport
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-
-    // Compute scrollPos that places EDIT straddling the viewport top.
-    // EDIT content-y = 250 (after the 5 fillers); viewport top in content
-    // coords = scrollPos. We want scrollPos = 250 + 50 = 300, so EDIT goes
-    // from content-y 250..350, viewport sees content-y 300..(300+364)=664,
-    // EDIT visible portion: 50 px (content-y 300..350) → host-y 36..86
-    // EDIT's full host-y: 36 - (300-250) .. 36 + (350-300) = -14 .. 86
-    fx.svPtr->SetScrollPos(300);
-
-    HWND hEdit = editPtr->GetHostedHwnd();
-    if (!hEdit) { return Fail(_T("PartialTop/noHwnd"), _T("EDIT not created")); }
-
-    RECT editDui = editPtr->GetRect();
-    // Precondition: EDIT must straddle viewport top — its top above sv top,
-    // its bottom below sv top. Otherwise this test's premise is wrong.
-    RECT svDui = fx.svPtr->GetRect();
-    if (!(editDui.top < svDui.top && editDui.bottom > svDui.top))
-    {
-        CString d;
-        d.Format(_T("expected editDui to straddle svDui.top=%d; got editDui=%s"),
-                 svDui.top, (LPCTSTR)FmtRectT3_(editDui));
-        return Fail(_T("PartialTop/badPrecondition"), d);
-    }
-
-    RECT editScreen = GetEffectiveScreenRect_(hEdit);
-    RECT svScreen   = fx.SvScreenRect();
-    if (!RectContains_(svScreen, editScreen))
-    {
-        CString d;
-        d.Format(_T("editScreen=%s leaks outside svScreen=%s"),
-                 (LPCTSTR)FmtRectT3_(editScreen), (LPCTSTR)FmtRectT3_(svScreen));
-        return Fail(_T("PartialTop/leaks"), d);
-    }
-    // Stronger: the EDIT must still be visibly painting *something* (the
-    // 50 px in-view portion). Empty effectiveRect would mean the fix went
-    // too far and hid an EDIT that should still show its bottom half.
-    if (::IsRectEmpty(&editScreen))
-    {
-        return Fail(_T("PartialTop/overClipped"),
-                    _T("EDIT effective rect is empty but bottom half should still show"));
-    }
-    return OK(_T("HwndHostInSV_PartiallyOut_Top"));
-}
-
-// ===== Case 3: fully visible — must NOT be clipped ====================
-//
-// At scrollPos=0 with the EDIT in clear viewport space, the fix must not
-// over-clip: effective rect should equal the EDIT's full DUI rect (in
-// screen coords). Catches the bug class "fix always sets a region even
-// when child is fully visible" — wasteful and easy to mess up.
-
-static Result Test_HwndHostInSV_FullyVisible_NotClipped()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("FullyVisible/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* editPtr = edit.get();
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    // Add fillers so a scroll bar appears (otherwise auto-height collapses
-    // content to viewport height and there's nothing to test).
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-    fx.svPtr->SetScrollPos(0);
-
-    HWND hEdit = editPtr->GetHostedHwnd();
-    if (!hEdit) { return Fail(_T("FullyVisible/noHwnd"), _T("EDIT not created")); }
-
-    RECT editDui = editPtr->GetRect();
-    RECT svDui   = fx.svPtr->GetRect();
-    // Precondition: EDIT fully inside svDui.
-    RECT inter;
-    if (!::IntersectRect(&inter, &editDui, &svDui) || !::EqualRect(&inter, &editDui))
-    {
-        return Fail(_T("FullyVisible/badPrecondition"),
-                    _T("EDIT not fully inside ScrollView"));
-    }
-
-    RECT editScreen = GetEffectiveScreenRect_(hEdit);
-    // 单行 EDIT 默认垂直居中（DuiEditHost::SetVerticalCenter 默认开）后，寄宿
-    // 窗口收成约一行高、在 DUI 矩形内居中，已不再填满 DUI 矩形；故期望值以寄宿
-    // 窗口的【真实矩形】为基准（而非 editDui）。完全可见时不应被裁小 —— 有效
-    // 矩形应覆盖"真实窗口矩形再内缩少量容差"。
-    RECT winScreen;
-    ::GetWindowRect(hEdit, &winScreen);   // 真实窗口矩形（屏幕坐标）
-    RECT minEdit = winScreen;
-    ::InflateRect(&minEdit, -2, -2);
-    if (!RectContains_(editScreen, minEdit))
-    {
-        CString d;
-        d.Format(_T("editScreen=%s does not contain minEdit=%s (over-clipped?)"),
-                 (LPCTSTR)FmtRectT3_(editScreen), (LPCTSTR)FmtRectT3_(minEdit));
-        return Fail(_T("FullyVisible/overClipped"), d);
-    }
-    return OK(_T("HwndHostInSV_FullyVisible_NotClipped"));
-}
-
-// ===== Case 4: scroll out then back — region must be cleared ===========
-//
-// Scroll-down clips the EDIT; scroll-back-to-top must restore it (no
-// stale region from the previous scroll position). Catches "fix sets
-// region but never clears it" bug class.
-
-static Result Test_HwndHostInSV_RegionRestoredOnScrollBack()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("ScrollBack/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* editPtr = edit.get();
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-
-    // Step 1: scroll to bottom (clips the EDIT)
-    fx.svPtr->SetScrollPos(fx.svPtr->GetScrollBar()->GetMax());
-    // Step 2: scroll back to top (must un-clip)
-    fx.svPtr->SetScrollPos(0);
-
-    HWND hEdit = editPtr->GetHostedHwnd();
-    if (!hEdit) { return Fail(_T("ScrollBack/noHwnd"), _T("EDIT not created")); }
-
-    // Same assertion as FullyVisible — after scrolling back, EDIT must be
-    // visibly the same as if we'd never scrolled。基准同样取寄宿窗口的真实矩形
-    // （单行 EDIT 默认垂直居中后不再填满 DUI 矩形，见 FullyVisible 用例注释）。
-    RECT winScreen;
-    ::GetWindowRect(hEdit, &winScreen);
-    RECT minEdit = winScreen;
-    ::InflateRect(&minEdit, -2, -2);
-
-    RECT editScreen = GetEffectiveScreenRect_(hEdit);
-    if (!RectContains_(editScreen, minEdit))
-    {
-        CString d;
-        d.Format(_T("after scroll-back: editScreen=%s does not contain minEdit=%s (stale region)"),
-                 (LPCTSTR)FmtRectT3_(editScreen), (LPCTSTR)FmtRectT3_(minEdit));
-        return Fail(_T("ScrollBack/staleRegion"), d);
-    }
-    return OK(_T("HwndHostInSV_RegionRestoredOnScrollBack"));
-}
-
-// ===== Case 5: multiple HwndHostControl siblings clipped independently
-//
-// Two EDITs at different content y's; scroll to a position where one is
-// fully out (above) and the other is fully in. Catches bug class "fix
-// only clips the first/last/wrong child".
-
-// Pump any pending paint messages for the popup so the post-scroll
-// GetUpdateRect check isn't polluted by leftover startup paint regions.
-static void DrainPaintMessages_(HWND hwnd)
-{
-    MSG msg;
-    while (::PeekMessage(&msg, hwnd, WM_PAINT, WM_PAINT, PM_REMOVE))
-    {
-        ::TranslateMessage(&msg);
-        ::DispatchMessage(&msg);
-    }
-    // UpdateWindow flushes any remaining update region synchronously.
-    ::UpdateWindow(hwnd);
-}
-
-// ===== Scroll-driven HWND ghost: paint must be flushed synchronously ===
-//
-// Without sync paint after a scroll-driven HWND move, the EDIT moves to
-// its new screen position via SetWindowPos but the parent's old-EDIT-area
-// stays unrepainted until the next async WM_PAINT. WS_CLIPCHILDREN +
-// suppressed WM_ERASEBKGND on the host means the OS doesn't auto-erase the
-// exposed region, so the EDIT's previous pixels visibly linger as a
-// "ghost" / drag trail until the next paint cycle catches up.
-//
-// Invariant we lock in: after SetScrollPos returns, the host's update
-// region is empty — meaning the paint that covers the OLD EDIT location
-// has already been processed synchronously, no async lag window left.
-//
-// Without the fix, OnSbScrolled only calls Invalidate (async); GetUpdateRect
-// still reports a non-empty region. With the fix (UpdateWindow / similar),
-// the region is processed inline before SetScrollPos returns.
-
-static Result Test_ScrollSync_FlushesPendingPaint()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("ScrollSync/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-    DrainPaintMessages_(fx.host.m_hWnd);
-
-    // Sanity: nothing pending before our scroll call. If this fails, our
-    // scroll-flushing assertion below is meaningless.
-    if (::GetUpdateRect(fx.host.m_hWnd, nullptr, FALSE))
-    {
-        return Fail(_T("ScrollSync/preBaseline"),
-                    _T("update region not empty before SetScrollPos"));
-    }
-
-    fx.svPtr->SetScrollPos(300);
-
-    // Hard assertion: SetScrollPos must leave the host with no pending
-    // paint. Without the lib fix, Invalidate just marks dirty + returns;
-    // GetUpdateRect == TRUE here means async paint was deferred → ghost.
-    RECT updRect = {};
-    if (::GetUpdateRect(fx.host.m_hWnd, &updRect, FALSE))
-    {
-        CString d;
-        d.Format(_T("update region pending after SetScrollPos: %s"),
-                 (LPCTSTR)FmtRectT3_(updRect));
-        return Fail(_T("ScrollSync/notFlushed"), d);
-    }
-    return OK(_T("ScrollSync_FlushesPendingPaint"));
-}
-
-// Repeated SetScrollPos calls (simulating thumb drag / mouse wheel spam):
-// every call must flush; no per-call pending paint accumulating.
-static Result Test_ScrollSync_RepeatedScrollsAllFlushed()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("ScrollSyncRep/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-    DrainPaintMessages_(fx.host.m_hWnd);
-
-    // Walk through 6 different scroll positions, simulate "user dragging
-    // the thumb fast". After EACH, update region must be empty.
-    int positions[] = { 50, 150, 250, 400, 200, 0 };
-    for (int p : positions)
-    {
-        fx.svPtr->SetScrollPos(p);
-        if (::GetUpdateRect(fx.host.m_hWnd, nullptr, FALSE))
-        {
-            CString d;
-            d.Format(_T("update region pending after SetScrollPos(%d)"), p);
-            return Fail(_T("ScrollSyncRep/notFlushedAt"), d);
-        }
-    }
-    return OK(_T("ScrollSync_RepeatedScrollsAllFlushed"));
-}
-
-// Sanity: confirm the scroll actually moves the EDIT's HWND. Otherwise
-// the FlushesPendingPaint test could pass trivially if SetScrollPos was
-// a no-op (e.g. range too small, content fits viewport). Catches setup
-// bugs in our fixture rather than in the library.
-static Result Test_ScrollSync_ActuallyMovedEditHwnd()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("ScrollSyncMove/init"));
-
-    auto edit = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* editPtr = edit.get();
-    fx.content->AddChild(std::move(edit), DuiLayout::Hint().Fixed(100));
-    for (int i = 0; i < 12; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(100));
-    }
-    fx.Realize();
-
-    HWND hEdit = editPtr->GetHostedHwnd();
-    if (!hEdit) { return Fail(_T("ScrollSyncMove/noHwnd"), _T("EDIT not created")); }
-
-    RECT before;
-    ::GetWindowRect(hEdit, &before);
-
-    fx.svPtr->SetScrollPos(200);
-
-    RECT after;
-    ::GetWindowRect(hEdit, &after);
-    if (before.top == after.top)
-    {
-        CString d;
-        d.Format(_T("EDIT did not move; before.top=%d after.top=%d (test setup may be wrong)"),
-                 before.top, after.top);
-        return Fail(_T("ScrollSyncMove/noMove"), d);
-    }
-    return OK(_T("ScrollSync_ActuallyMovedEditHwnd"));
-}
-
-static Result Test_HwndHostInSV_MultipleSiblingsClippedIndependently()
-{
-    HwndHostInScrollViewFixture fx;
-    INIT_FIXTURE(fx, _T("MultiSib/init"));
-
-    auto eA = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* eAPtr = eA.get();
-    fx.content->AddChild(std::move(eA), DuiLayout::Hint().Fixed(80));
-    for (int i = 0; i < 8; ++i)   // 8 × 50 = 400 px filler between
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(50));
-    }
-    auto eB = std::unique_ptr<DuiEditHost>(new DuiEditHost());
-    DuiEditHost* eBPtr = eB.get();
-    fx.content->AddChild(std::move(eB), DuiLayout::Hint().Fixed(80));
-    for (int i = 0; i < 6; ++i)
-    {
-        fx.content->AddChild(std::unique_ptr<DuiControl>(new StubChild()),
-                             DuiLayout::Hint().Fixed(50));
-    }
-    fx.Realize();
-
-    // Scroll so eA is way above viewport, eB is in viewport.
-    // content layout: eA y=0..80, fillers y=80..480, eB y=480..560, fillers y=560..860
-    // viewport is 364 px tall; pick scrollPos = 480 → viewport sees 480..844
-    // eA host-y = 36 + 0 - 480 = -444 .. -364 (well above)
-    // eB host-y = 36 + 480 - 480 = 36 .. 116 (top of viewport)
-    fx.svPtr->SetScrollPos(480);
-
-    RECT svScreen = fx.SvScreenRect();
-    HWND hA = eAPtr->GetHostedHwnd();
-    HWND hB = eBPtr->GetHostedHwnd();
-    if (!hA || !hB)
-    {
-        return Fail(_T("MultiSib/noHwnd"), _T("one or both EDITs not created"));
-    }
-
-    RECT screenA = GetEffectiveScreenRect_(hA);
-    RECT screenB = GetEffectiveScreenRect_(hB);
-
-    // eA must not leak outside viewport
-    if (!RectContains_(svScreen, screenA))
-    {
-        CString d;
-        d.Format(_T("eA=%s leaks outside svScreen=%s"),
-                 (LPCTSTR)FmtRectT3_(screenA), (LPCTSTR)FmtRectT3_(svScreen));
-        return Fail(_T("MultiSib/eA_leaks"), d);
-    }
-    // eB must not leak either
-    if (!RectContains_(svScreen, screenB))
-    {
-        CString d;
-        d.Format(_T("eB=%s leaks outside svScreen=%s"),
-                 (LPCTSTR)FmtRectT3_(screenB), (LPCTSTR)FmtRectT3_(svScreen));
-        return Fail(_T("MultiSib/eB_leaks"), d);
-    }
-    // eB should still be visible (it's the one that's in viewport)
-    if (::IsRectEmpty(&screenB))
-    {
-        return Fail(_T("MultiSib/eB_overClipped"),
-                    _T("eB is in viewport but effective rect is empty"));
-    }
-    return OK(_T("HwndHostInSV_MultipleSiblingsClippedIndependently"));
-}
-
 // ===== DuiToast =========================================================
 
 // 默认值:durationMs=3000, fadeMs=200, textColor 白, bgColor 深灰,
@@ -1573,6 +1045,7 @@ CString RunAll()
         { _T("SearchBoxLayoutCarves"),      &Test_SearchBoxLayoutCarves      },
         { _T("SearchBoxClearClick"),        &Test_SearchBoxClearClick        },
         { _T("SearchBoxClearWidthClamps"),  &Test_SearchBoxClearWidthClamps  },
+        { _T("SearchBoxTypingReentrancy"),  &Test_SearchBoxTypingReentrancy  },
         { _T("SpinBoxDefaults"),            &Test_SpinBoxDefaults            },
         { _T("SpinBoxClampOrWrap"),         &Test_SpinBoxClampOrWrap         },
         { _T("SpinBoxSetValueClamps"),      &Test_SpinBoxSetValueClamps      },
@@ -1588,14 +1061,6 @@ CString RunAll()
         { _T("ScrollViewAutoHeight"),       &Test_ScrollViewAutoHeight       },
         { _T("ScrollViewAutoHeightZeroIgnored"), &Test_ScrollViewAutoHeightZeroIgnored },
         { _T("VBoxDrivesScrollViewAutoHeight"),  &Test_VBoxDrivesScrollViewAutoHeight  },
-        { _T("HwndHostInSV_FullyOut_Above"),                       &Test_HwndHostInSV_FullyOut_Above                       },
-        { _T("HwndHostInSV_PartiallyOut_Top"),                     &Test_HwndHostInSV_PartiallyOut_Top                     },
-        { _T("HwndHostInSV_FullyVisible_NotClipped"),              &Test_HwndHostInSV_FullyVisible_NotClipped              },
-        { _T("HwndHostInSV_RegionRestoredOnScrollBack"),           &Test_HwndHostInSV_RegionRestoredOnScrollBack           },
-        { _T("HwndHostInSV_MultipleSiblingsClippedIndependently"), &Test_HwndHostInSV_MultipleSiblingsClippedIndependently },
-        { _T("ScrollSync_FlushesPendingPaint"),                    &Test_ScrollSync_FlushesPendingPaint                    },
-        { _T("ScrollSync_RepeatedScrollsAllFlushed"),              &Test_ScrollSync_RepeatedScrollsAllFlushed              },
-        { _T("ScrollSync_ActuallyMovedEditHwnd"),                  &Test_ScrollSync_ActuallyMovedEditHwnd                  },
         // ---- DuiToast ----
         { _T("ToastDefaults"),            &Test_ToastDefaults            },
         { _T("ToastSettersAndClamp"),     &Test_ToastSettersAndClamp     },

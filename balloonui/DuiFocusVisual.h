@@ -12,7 +12,7 @@
 //
 // DuiFocus::DrawRing 画一条干净的 2px 实线，按指定 color 上色；可选
 // 1px 白色 inset 让深 / 浅背景下都看得见。DuiButton / DuiSlider /
-// DuiListBox / DuiEditHost 等控件聚焦时都用它。
+// DuiListBox / DuiEdit 等控件聚焦时都用它。
 //
 // 代码用法：
 //
