@@ -498,7 +498,7 @@
   </tr>
   <tr>
     <td><b>External dependencies</b></td>
-    <td>Just ATL / WTL 9.0 + GDI / GDI+ / comctl32 / richedit (all OS-provided)</td>
+    <td>Just ATL / WTL 10.1 + GDI / GDI+ / comctl32 / richedit (all OS-provided)</td>
     <td>None</td>
     <td>Needs .NET runtime / Qt shared libs</td>
     <td>Embeds full Chromium</td>
@@ -526,7 +526,7 @@
   <li><b>Event bubbling</b>: child controls call <code>NotifyParent(DUIN_*, extra)</code> to bubble up a <code>WM_DUI_NOTIFY</code>.</li>
   <li><b>Per-Monitor V2 DPI awareness</b>: one line — <code>DuiDpi::OptInPerMonitorV2()</code>.</li>
   <li><b>Unified GDI+ anti-aliasing</b>: <code>DuiPaintAA::FillEllipse / FillPolygon / FillRoundRect / DrawLine</code> — every non-axis-aligned shape (circle / triangle / diagonal line / rounded rect) goes through the same API.</li>
-  <li><b>Zero-extra-dependency build</b>: only ATL/WTL 9.0, GDI, GDI+, comctl32, richedit.</li>
+  <li><b>Zero-extra-dependency build</b>: only ATL/WTL 10.1, GDI, GDI+, comctl32, richedit.</li>
 </ul>
 
 <!-- ============================================================== -->
@@ -561,7 +561,7 @@
 
 <pre><code>&lt;ClCompile&gt;
   &lt;AdditionalIncludeDirectories&gt;
-    ..\balloonui;..\Source\wtl9.0;%(AdditionalIncludeDirectories)
+    ..\balloonui;..\wtl10.1;%(AdditionalIncludeDirectories)
   &lt;/AdditionalIncludeDirectories&gt;
   &lt;PreprocessorDefinitions&gt;BUI_USE_DLL;%(PreprocessorDefinitions)&lt;/PreprocessorDefinitions&gt;
 &lt;/ClCompile&gt;
@@ -3434,7 +3434,7 @@ if (rowFrom &gt;= rowTo) { return; }
   </ul>
 
   <h4>Stress-test demo: DemoTreeViewLargeData</h4>
-  <p>The repo ships a multi-column large-data stress demo. Path: <code>flamingoclient/DemoTreeViewLargeData/</code>; built binary: <code>Bin/DemoTreeViewLargeData.exe</code>. After launching, six buttons across the top — "Insert 1k / 10k / 30k rows / Clear / Expand all / Collapse all" — and a status bar below showing live:</p>
+  <p>The repo ships a multi-column large-data stress demo. Path: <code>third-party/balloonui/DemoTreeViewLargeData/</code>; built binary: <code>Bin/DemoTreeViewLargeData.exe</code>. After launching, six buttons across the top — "Insert 1k / 10k / 30k rows / Clear / Expand all / Collapse all" — and a status bar below showing live:</p>
 <pre><code>Rows: N  |  Last OnPaint: X.XX ms (dirty-rect height H px)
         |  Last 60 frames avg/peak: A.AA / P.PP ms
 </code></pre>
@@ -4550,10 +4550,10 @@ host.SetRoot(std::move(root));
 
 <table>
   <tr><th>Project</th><th>What it demonstrates</th><th>Source</th></tr>
-  <tr><td><code>DemoTextBadgeTile.exe</code></td><td>The simplest custom paint — rounded rectangle + centered text.</td><td><code>flamingoclient/DemoTextBadgeTile/</code></td></tr>
-  <tr><td><code>DemoCircularProgress.exe</code></td><td>GDI+ anti-aliased ring + clamping setter.</td><td><code>flamingoclient/DemoCircularProgress/</code></td></tr>
-  <tr><td><code>DemoChatBubble.exe</code></td><td>Irregular shape (with a tail) + MeasureHeight + left/right alignment.</td><td><code>flamingoclient/DemoChatBubble/</code></td></tr>
-  <tr><td><code>DemoFileTypeIcon.exe</code></td><td>Data-driven palette + folded corner + hover feedback.</td><td><code>flamingoclient/DemoFileTypeIcon/</code></td></tr>
+  <tr><td><code>DemoTextBadgeTile.exe</code></td><td>The simplest custom paint — rounded rectangle + centered text.</td><td><code>third-party/balloonui/DemoTextBadgeTile/</code></td></tr>
+  <tr><td><code>DemoCircularProgress.exe</code></td><td>GDI+ anti-aliased ring + clamping setter.</td><td><code>third-party/balloonui/DemoCircularProgress/</code></td></tr>
+  <tr><td><code>DemoChatBubble.exe</code></td><td>Irregular shape (with a tail) + MeasureHeight + left/right alignment.</td><td><code>third-party/balloonui/DemoChatBubble/</code></td></tr>
+  <tr><td><code>DemoFileTypeIcon.exe</code></td><td>Data-driven palette + folded corner + hover feedback.</td><td><code>third-party/balloonui/DemoFileTypeIcon/</code></td></tr>
 </table>
 
 <p>Each demo shows both the <b>code path</b> and the <b>XML path</b>, and ships a <code>--capture-all &lt;dir&gt;</code> screenshot mode (the PNGs in this section were captured live from these demos).</p>
@@ -4633,7 +4633,7 @@ void DemoTextBadgeTile::OnPaint(HDC hdc, const RECT&amp;)
 
 <details class="full-code">
   <summary>Show full source (.h + .cpp + main.cpp's XML factory)</summary>
-  <pre><code>// Full source: flamingoclient/DemoTextBadgeTile/
+  <pre><code>// Full source: third-party/balloonui/DemoTextBadgeTile/
 //   stdafx.h               — common ATL/WTL forwards
 //   DemoTextBadgeTile.h    — class declaration
 //   DemoTextBadgeTile.cpp  — setters + OnPaint + OnLButtonUp
@@ -5047,7 +5047,7 @@ static Palette LookupPalette(LPCTSTR ext);
 
 <h3 id="custom-build">8.5 Build &amp; run</h3>
 
-<p>All four demos live in <code>flamingoclient/Demos.sln</code>. Command-line build:</p>
+<p>All four demos live in <code>third-party/balloonui/Demos.sln</code>. Command-line build:</p>
 
 <pre><code>msbuild Demos.sln /p:Configuration=Debug /p:Platform=Win32 ^
         /t:DemoTextBadgeTile;DemoCircularProgress;DemoChatBubble;DemoFileTypeIcon
@@ -5059,10 +5059,10 @@ Bin\DemoChatBubble.exe
 Bin\DemoFileTypeIcon.exe
 
 # Capture mode (regenerate the images used in this section)
-Bin\DemoTextBadgeTile.exe   --capture-all flamingoclient\docs\images
-Bin\DemoCircularProgress.exe --capture-all flamingoclient\docs\images
-Bin\DemoChatBubble.exe      --capture-all flamingoclient\docs\images
-Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
+Bin\DemoTextBadgeTile.exe   --capture-all third-party\balloonui\docs\images
+Bin\DemoCircularProgress.exe --capture-all third-party\balloonui\docs\images
+Bin\DemoChatBubble.exe      --capture-all third-party\balloonui\docs\images
+Bin\DemoFileTypeIcon.exe    --capture-all third-party\balloonui\docs\images
 </code></pre>
 
 <hr>
@@ -5070,7 +5070,7 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 <!-- ============================================================== -->
 <h2 id="layouts">9. Full layout examples</h2>
 
-<p>This chapter walks through five complete demos of common UI layouts — <b>each rendered with real balloonui controls</b> (not mocks) — and provides equivalent XML for each. Screenshots come from DuiGallery's <code>Layouts</code> tab; rerun <code>DuiGallery.exe --capture-all flamingoclient\docs\images</code> to regenerate them.</p>
+<p>This chapter walks through five complete demos of common UI layouts — <b>each rendered with real balloonui controls</b> (not mocks) — and provides equivalent XML for each. Screenshots come from DuiGallery's <code>Layouts</code> tab; rerun <code>DuiGallery.exe --capture-all third-party\balloonui\docs\images</code> to regenerate them.</p>
 
 <p class="note">The goal of this chapter is <b>"after reading, you can assemble a real window"</b> — focusing on the Hint usage (<code>Fixed</code>/<code>Weight</code>) for <code>DuiVBox/HBox/Dock/Splitter</code> + how to combine the stock controls (<code>DuiLabel</code>/<code>DuiEdit</code>/<code>DuiButton</code>/<code>DuiListBox</code>/<code>DuiSearchBox</code>/<code>DuiAvatar</code>/<code>DuiComboBox</code>).</p>
 
@@ -5080,9 +5080,9 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 
 <h4>9.0.1 Project setup</h4>
 <ul>
-  <li><b>Solution / project</b>: add an Application project to <code>flamingoclient/Demos.sln</code> (use the <code>DemoNinePatchBg.vcxproj</code> template), with <code>OutDir = ..\Bin\</code>.</li>
+  <li><b>Solution / project</b>: add an Application project to <code>third-party/balloonui/Demos.sln</code> (use the <code>DemoNinePatchBg.vcxproj</code> template), with <code>OutDir = ..\Bin\</code>.</li>
   <li><b>Preprocessor</b>: <code>WIN32;_WINDOWS;BUI_USE_DLL;_CRT_SECURE_NO_WARNINGS</code> (<code>BUI_USE_DLL</code> makes <code>BUI_API</code> resolve to <code>__declspec(dllimport)</code> for linking against balloonui.dll).</li>
-  <li><b>Include directories</b>: <code>..\balloonui;..\Source\wtl9.0</code></li>
+  <li><b>Include directories</b>: <code>..\balloonui;..\wtl10.1</code></li>
   <li><b>Linked libs</b>: <code>balloonui.lib;gdiplus.lib;comctl32.lib</code> (<code>AdditionalLibraryDirectories=..\Bin</code>)</li>
   <li><b>Subsystem</b>: <code>Windows</code> (<code>SubSystem=Windows</code>, entry <code>WinMain</code>)</li>
   <li><b>UTF-8 source</b>: <code>AdditionalOptions=/utf-8 /FS</code> (so Chinese <code>_T(...)</code> literals encode consistently)</li>
@@ -5207,12 +5207,12 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
 <h4>9.0.3 Build &amp; run</h4>
 
 <pre><code># Inside VS 2022:
-# 1. Open flamingoclient\Demos.sln
+# 1. Open third-party\balloonui\Demos.sln
 # 2. Add the new project (or clone DemoNinePatchBg.vcxproj and rename it)
 # 3. Pick Debug | Win32 → Build solution
 # 4. Run Bin\MyApp.exe
 
-# Command line (from flamingoclient\):
+# Command line (from third-party\balloonui\):
 "%MSBuild%" Demos.sln /t:MyApp /p:Configuration=Debug /p:Platform=Win32
 .\Bin\MyApp.exe
 </code></pre>
@@ -6368,7 +6368,7 @@ frame.ShowWindow(SW_SHOW);
 
 <h3 id="bg-demo">10.9 Full demo</h3>
 
-<p>A standalone runnable demo lives at <code>flamingoclient/DemoNinePatchBg/</code>:</p>
+<p>A standalone runnable demo lives at <code>third-party/balloonui/DemoNinePatchBg/</code>:</p>
 
 <table>
   <tr><th>File</th><th>Purpose</th></tr>
@@ -6385,7 +6385,7 @@ msbuild Demos.sln /p:Configuration=Debug /p:Platform=Win32 /t:DemoNinePatchBg
 Bin\DemoNinePatchBg.exe
 
 # Capture mode — regenerate this section's images
-Bin\DemoNinePatchBg.exe --capture-all flamingoclient\docs\images
+Bin\DemoNinePatchBg.exe --capture-all third-party\balloonui\docs\images
 </code></pre>
 
 <hr>
@@ -7732,11 +7732,11 @@ public:
 <h2>Appendix</h2>
 
 <h3>A. Full project example</h3>
-<p>See <code>flamingoclient/NewChatDemo/</code>: built entirely on balloonui, it demonstrates 13 business-specific custom-drawn controls + XML descriptions, chat bubbles, and custom-paint layout (<code>chat-thread</code> manages its own children's positions).</p>
+<p>See <code>third-party/balloonui/NewChatDemo/</code>: built entirely on balloonui, it demonstrates 13 business-specific custom-drawn controls + XML descriptions, chat bubbles, and custom-paint layout (<code>chat-thread</code> manages its own children's positions).</p>
 <img class="shot" src="images/NewChatDemo_final.png" alt="NewChatDemo screenshot">
 
 <h3>B. Build &amp; packaging</h3>
-<p>All projects live in <code>flamingoclient/Demos.sln</code>:</p>
+<p>All projects live in <code>third-party/balloonui/Demos.sln</code>:</p>
 <ul>
   <li><code>balloonui</code> → <code>Bin/balloonui.dll</code> + <code>Bin/balloonui.lib</code> (Win32) / <code>Bin/x64/...</code> (x64)</li>
   <li><code>NewChatDemo</code> → <code>Bin/NewChatDemo.exe</code>, linked against <code>balloonui.lib</code></li>

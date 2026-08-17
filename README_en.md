@@ -4,7 +4,7 @@
 
 A no-HWND DUI (DirectUI) control library for Windows desktop apps, shipped
 together with several full-feature demos and an all-controls showcase window
-(DuiGallery). Built with Visual Studio 2022 + WTL 9.0 + Win32 API — no
+(DuiGallery). Built with Visual Studio 2022 + WTL 10.1 + Win32 API — no
 external dependencies, works out of the box.
 
 ![NewChatDemo main window](docs/images/NewChatDemo_final.png)
@@ -248,7 +248,7 @@ Smaller demos illustrate single controls or single element types:
 ## Build requirements
 
 - Visual Studio 2022 (VS 2019 also works, downgrade the toolset yourself)
-- WTL 9.0 (a copy is bundled under `wtl9.0/`)
+- WTL 10.1 (a copy is bundled under `wtl10.1/`)
 - Platform: **Win32 (x86/x64)**, Debug / Release both fine
 - Target OS: Windows 7 and above
 
@@ -306,7 +306,7 @@ third_party/
 ├── docs/
 │   ├── guides.html         Companion guide
 │   └── images/             Documentation assets
-├── wtl9.0/                 Bundled WTL 9.0
+├── wtl10.1/                Bundled WTL 10.1
 ├── Goldens/                Golden images (used for regression diffing)
 ├── Bin/                    Output directory
 └── Demos.sln               Loads every project at once

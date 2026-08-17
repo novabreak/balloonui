@@ -496,7 +496,7 @@
   </tr>
   <tr>
     <td><b>外部依赖</b></td>
-    <td>仅 ATL / WTL 9.0 + GDI / GDI+ / comctl32 / richedit（系统自带）</td>
+    <td>仅 ATL / WTL 10.1 + GDI / GDI+ / comctl32 / richedit（系统自带）</td>
     <td>无</td>
     <td>需要 .NET 运行时 / Qt 共享库</td>
     <td>嵌入完整 Chromium</td>
@@ -524,7 +524,7 @@
   <li><b>事件冒泡</b>：子控件通过 <code>NotifyParent(DUIN_*, extra)</code> 向上发 <code>WM_DUI_NOTIFY</code>。</li>
   <li><b>Per-Monitor V2 DPI 感知</b>：<code>DuiDpi::OptInPerMonitorV2()</code> 一行启用。</li>
   <li><b>GDI+ 抗锯齿统一封装</b>：<code>DuiPaintAA::FillEllipse / FillPolygon / FillRoundRect / DrawLine</code>，所有非轴对齐图形（圆 / 三角 / 斜线 / 圆角矩形）走同一接口。</li>
-  <li><b>无依赖编译</b>：仅依赖 ATL/WTL 9.0、GDI、GDI+、comctl32、richedit。</li>
+  <li><b>无依赖编译</b>：仅依赖 ATL/WTL 10.1、GDI、GDI+、comctl32、richedit。</li>
 </ul>
 
 <!-- ============================================================== -->
@@ -559,7 +559,7 @@
 
 <pre><code>&lt;ClCompile&gt;
   &lt;AdditionalIncludeDirectories&gt;
-    ..\balloonui;..\Source\wtl9.0;%(AdditionalIncludeDirectories)
+    ..\balloonui;..\wtl10.1;%(AdditionalIncludeDirectories)
   &lt;/AdditionalIncludeDirectories&gt;
   &lt;PreprocessorDefinitions&gt;BUI_USE_DLL;%(PreprocessorDefinitions)&lt;/PreprocessorDefinitions&gt;
 &lt;/ClCompile&gt;
@@ -3425,7 +3425,7 @@ if (rowFrom &gt;= rowTo) { return; }
   </ul>
 
   <h4>压测 demo：DemoTreeViewLargeData</h4>
-  <p>仓库内自带的多列大数据量压测 demo。位置 <code>flamingoclient/DemoTreeViewLargeData/</code>，编出来在 <code>Bin/DemoTreeViewLargeData.exe</code>。打开后顶部有"插入 1k / 10k / 30k 行 / 清空 / 全展开 / 全折叠"6 个按钮，下方状态条实时显示：</p>
+  <p>仓库内自带的多列大数据量压测 demo。位置 <code>third-party/balloonui/DemoTreeViewLargeData/</code>，编出来在 <code>Bin/DemoTreeViewLargeData.exe</code>。打开后顶部有"插入 1k / 10k / 30k 行 / 清空 / 全展开 / 全折叠"6 个按钮，下方状态条实时显示：</p>
 <pre><code>行数: N  |  上次 OnPaint: X.XX ms (脏区高 H px)
        |  最近 60 帧平均/峰值: A.AA / P.PP ms
 </code></pre>
@@ -4540,10 +4540,10 @@ host.SetRoot(std::move(root));
 
 <table>
   <tr><th>工程</th><th>演示重点</th><th>源代码</th></tr>
-  <tr><td><code>DemoTextBadgeTile.exe</code></td><td>最简自绘 — 圆角矩形 + 居中文字</td><td><code>flamingoclient/DemoTextBadgeTile/</code></td></tr>
-  <tr><td><code>DemoCircularProgress.exe</code></td><td>GDI+ 抗锯齿圆环 + clamp setter</td><td><code>flamingoclient/DemoCircularProgress/</code></td></tr>
-  <tr><td><code>DemoChatBubble.exe</code></td><td>异形（带尾巴）+ MeasureHeight 测高 + 左右对齐</td><td><code>flamingoclient/DemoChatBubble/</code></td></tr>
-  <tr><td><code>DemoFileTypeIcon.exe</code></td><td>数据驱动配色 + 折角 + hover 反馈</td><td><code>flamingoclient/DemoFileTypeIcon/</code></td></tr>
+  <tr><td><code>DemoTextBadgeTile.exe</code></td><td>最简自绘 — 圆角矩形 + 居中文字</td><td><code>third-party/balloonui/DemoTextBadgeTile/</code></td></tr>
+  <tr><td><code>DemoCircularProgress.exe</code></td><td>GDI+ 抗锯齿圆环 + clamp setter</td><td><code>third-party/balloonui/DemoCircularProgress/</code></td></tr>
+  <tr><td><code>DemoChatBubble.exe</code></td><td>异形（带尾巴）+ MeasureHeight 测高 + 左右对齐</td><td><code>third-party/balloonui/DemoChatBubble/</code></td></tr>
+  <tr><td><code>DemoFileTypeIcon.exe</code></td><td>数据驱动配色 + 折角 + hover 反馈</td><td><code>third-party/balloonui/DemoFileTypeIcon/</code></td></tr>
 </table>
 
 <p>每个 demo 都同时演示 <b>代码方式</b> 与 <b>XML 方式</b> 两条创建路径，并自带 <code>--capture-all &lt;dir&gt;</code> 截图模式（本节里的 PNG 都是从这些 demo 真截出来的）。</p>
@@ -4623,7 +4623,7 @@ void DemoTextBadgeTile::OnPaint(HDC hdc, const RECT&amp;)
 
 <details class="full-code">
   <summary>展开完整代码（.h + .cpp + main.cpp 的 XML 工厂）</summary>
-  <pre><code>// 完整源代码见 flamingoclient/DemoTextBadgeTile/
+  <pre><code>// 完整源代码见 third-party/balloonui/DemoTextBadgeTile/
 //   stdafx.h               — ATL/WTL 通用前向
 //   DemoTextBadgeTile.h    — 类声明
 //   DemoTextBadgeTile.cpp  — setter + OnPaint + OnLButtonUp
@@ -5037,7 +5037,7 @@ static Palette LookupPalette(LPCTSTR ext);
 
 <h3 id="custom-build">8.5 编译运行</h3>
 
-<p>4 个 demo 都在 <code>flamingoclient/Demos.sln</code> 里。命令行编译：</p>
+<p>4 个 demo 都在 <code>third-party/balloonui/Demos.sln</code> 里。命令行编译：</p>
 
 <pre><code>msbuild Demos.sln /p:Configuration=Debug /p:Platform=Win32 ^
         /t:DemoTextBadgeTile;DemoCircularProgress;DemoChatBubble;DemoFileTypeIcon
@@ -5049,10 +5049,10 @@ Bin\DemoChatBubble.exe
 Bin\DemoFileTypeIcon.exe
 
 # 截图模式（重新生成本节用图）
-Bin\DemoTextBadgeTile.exe   --capture-all flamingoclient\docs\images
-Bin\DemoCircularProgress.exe --capture-all flamingoclient\docs\images
-Bin\DemoChatBubble.exe      --capture-all flamingoclient\docs\images
-Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
+Bin\DemoTextBadgeTile.exe   --capture-all third-party\balloonui\docs\images
+Bin\DemoCircularProgress.exe --capture-all third-party\balloonui\docs\images
+Bin\DemoChatBubble.exe      --capture-all third-party\balloonui\docs\images
+Bin\DemoFileTypeIcon.exe    --capture-all third-party\balloonui\docs\images
 </code></pre>
 
 <hr>
@@ -5060,7 +5060,7 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 <!-- ============================================================== -->
 <h2 id="layouts">9. 完整布局示例</h2>
 
-<p>本章给 5 个常见 UI 布局的完整 demo — <b>每个都是 balloonui 真控件渲染</b>（不是 mock），并附等价 XML 描述。截图来自 DuiGallery 的 <code>Layouts</code> tab，运行 <code>DuiGallery.exe --capture-all flamingoclient\docs\images</code> 可重新生成。</p>
+<p>本章给 5 个常见 UI 布局的完整 demo — <b>每个都是 balloonui 真控件渲染</b>（不是 mock），并附等价 XML 描述。截图来自 DuiGallery 的 <code>Layouts</code> tab，运行 <code>DuiGallery.exe --capture-all third-party\balloonui\docs\images</code> 可重新生成。</p>
 
 <p class="note">本章的目标是<b>"看完就会拼一个真窗口"</b> — 重点演示 <code>DuiVBox/HBox/Dock/Splitter</code> 的 Hint 用法（<code>Fixed</code>/<code>Weight</code>）+ 现成控件（<code>DuiLabel</code>/<code>DuiEdit</code>/<code>DuiButton</code>/<code>DuiListBox</code>/<code>DuiSearchBox</code>/<code>DuiAvatar</code>/<code>DuiComboBox</code>）的组合方式。</p>
 
@@ -5070,9 +5070,9 @@ Bin\DemoFileTypeIcon.exe    --capture-all flamingoclient\docs\images
 
 <h4>9.0.1 项目设置</h4>
 <ul>
-  <li><b>解决方案 / 工程</b>：<code>flamingoclient/Demos.sln</code> 里加一个 Application 工程（参 <code>DemoNinePatchBg.vcxproj</code> 模板），<code>OutDir = ..\Bin\</code>。</li>
+  <li><b>解决方案 / 工程</b>：<code>third-party/balloonui/Demos.sln</code> 里加一个 Application 工程（参 <code>DemoNinePatchBg.vcxproj</code> 模板），<code>OutDir = ..\Bin\</code>。</li>
   <li><b>预处理器</b>：<code>WIN32;_WINDOWS;BUI_USE_DLL;_CRT_SECURE_NO_WARNINGS</code>（<code>BUI_USE_DLL</code> 让 <code>BUI_API</code> 解析为 <code>__declspec(dllimport)</code>，对接 balloonui.dll）。</li>
-  <li><b>包含目录</b>：<code>..\balloonui;..\Source\wtl9.0</code></li>
+  <li><b>包含目录</b>：<code>..\balloonui;..\wtl10.1</code></li>
   <li><b>链接库</b>：<code>balloonui.lib;gdiplus.lib;comctl32.lib</code>（<code>AdditionalLibraryDirectories=..\Bin</code>）</li>
   <li><b>子系统</b>：<code>Windows</code>（<code>SubSystem=Windows</code>，入口 <code>WinMain</code>）</li>
   <li><b>UTF-8 源</b>：<code>AdditionalOptions=/utf-8 /FS</code>（让中文 _T(...) 字面量编码一致）</li>
@@ -5196,12 +5196,12 @@ int WINAPI _tWinMain(HINSTANCE hInst, HINSTANCE, LPTSTR, int nCmdShow)
 <h4>9.0.3 构建 + 运行</h4>
 
 <pre><code># 在 VS 2022 里：
-# 1. 打开 flamingoclient\Demos.sln
+# 1. 打开 third-party\balloonui\Demos.sln
 # 2. 把新工程加进去（或克隆 DemoNinePatchBg.vcxproj 改名）
 # 3. 选 Debug | Win32 → 生成解决方案
 # 4. 跑 Bin\MyApp.exe
 
-# 命令行（在 flamingoclient\ 下）：
+# 命令行（在 third-party\balloonui\ 下）：
 "%MSBuild%" Demos.sln /t:MyApp /p:Configuration=Debug /p:Platform=Win32
 .\Bin\MyApp.exe
 </code></pre>
@@ -6353,7 +6353,7 @@ frame.ShowWindow(SW_SHOW);
 
 <h3 id="bg-demo">10.9 完整 Demo</h3>
 
-<p>独立可运行 demo 在 <code>flamingoclient/DemoNinePatchBg/</code>：</p>
+<p>独立可运行 demo 在 <code>third-party/balloonui/DemoNinePatchBg/</code>：</p>
 
 <table>
   <tr><th>文件</th><th>作用</th></tr>
@@ -6370,7 +6370,7 @@ msbuild Demos.sln /p:Configuration=Debug /p:Platform=Win32 /t:DemoNinePatchBg
 Bin\DemoNinePatchBg.exe
 
 # 截图模式 — 重新生成本节图
-Bin\DemoNinePatchBg.exe --capture-all flamingoclient\docs\images
+Bin\DemoNinePatchBg.exe --capture-all third-party\balloonui\docs\images
 </code></pre>
 
 <hr>
@@ -7714,11 +7714,11 @@ public:
 <h2>附录</h2>
 
 <h3>A. 完整工程示例</h3>
-<p>参见 <code>flamingoclient/NewChatDemo/</code>：完全基于 balloonui，演示 13 种业务自绘控件 + XML 描述、聊天气泡、自绘布局（<code>chat-thread</code> 自管子节点位置）。</p>
+<p>参见 <code>third-party/balloonui/NewChatDemo/</code>：完全基于 balloonui，演示 13 种业务自绘控件 + XML 描述、聊天气泡、自绘布局（<code>chat-thread</code> 自管子节点位置）。</p>
 <img class="shot" src="images/NewChatDemo_final.png" alt="NewChatDemo 截图">
 
 <h3>B. 编译与打包</h3>
-<p>所有工程在 <code>flamingoclient/Demos.sln</code>：</p>
+<p>所有工程在 <code>third-party/balloonui/Demos.sln</code>：</p>
 <ul>
   <li><code>balloonui</code> → <code>Bin/balloonui.dll</code> + <code>Bin/balloonui.lib</code>（Win32）/ <code>Bin/x64/...</code>（x64）</li>
   <li><code>NewChatDemo</code> → <code>Bin/NewChatDemo.exe</code> 链 <code>balloonui.lib</code></li>

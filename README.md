@@ -3,7 +3,7 @@
 **语言：** 中文 | [English](README_en.md)
 
 一套面向 Windows 桌面应用的无 HWND DUI（DirectUI）控件库，配套若干完整 Demo
-和一个全控件展示窗 (DuiGallery)。整套实现用 Visual Studio 2022 + WTL 9.0 +
+和一个全控件展示窗 (DuiGallery)。整套实现用 Visual Studio 2022 + WTL 10.1 +
 Win32 API，无外部依赖，开箱即用。
 
 ![NewChatDemo 主界面](docs/images/NewChatDemo_final.png)
@@ -220,7 +220,7 @@ NewChatDemo / CloudMelodyDesktop / 任务管理器演示了"完整应用"级别�
 ## 构建要求
 
 - Visual Studio 2022（也支持 2019，需自行降级 toolset）
-- WTL 9.0（仓内 `wtl9.0/` 已含一份）
+- WTL 10.1（仓内 `wtl10.1/` 已含一份）
 - 平台：**Win32 (x86/x64)**，Debug / Release 均可
 - 运行平台：Windows 7 及以上
 
@@ -278,7 +278,7 @@ third_party/
 ├── docs/
 │   ├── guides.html         配套指南
 │   └── images/             文档配图
-├── wtl9.0/                 仓内 WTL 9.0
+├── wtl10.1/                仓内 WTL 10.1
 ├── Goldens/                金图（用于回归对比）
 ├── Bin/                    输出目录
 └── Demos.sln               一次性加载所有工程
