@@ -170,7 +170,7 @@
     <ClCompile Include="XmlDocument.cpp"><Filter>Skin</Filter></ClCompile>
 
     <!-- ============== Build ============== -->
-    <ClInclude Include="stdafx.h">       <Filter>Build</Filter></ClInclude>
-    <ClCompile Include="dllmain.cpp">    <Filter>Build</Filter></ClCompile>
+    <ClInclude Include="stdafx.h">            <Filter>Build</Filter></ClInclude>
+    <ClInclude Include="BalloonUiFeatures.h"> <Filter>Build</Filter></ClInclude>
   </ItemGroup>
 </Project>
