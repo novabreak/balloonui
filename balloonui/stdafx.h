@@ -1,7 +1,13 @@
 #pragma once
 
+//下面两个宏各工程可能已在命令行上定义（如 Flamingo.vcxproj、DuiGallery.vcxproj），
+//这里加 #ifndef 保护，避免重复定义触发 C4005。
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
+#ifndef _WINSOCK_DEPRECATED_NO_WARNINGS
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
+#endif
 
 #define WINVER          0x0601
 #define _WIN32_WINNT    0x0601

@@ -384,15 +384,15 @@ BOOL CXmlDocument::Load(LPCTSTR pPath)
 	if (FAILED(hr))
 		return FALSE;
 
-	hr = m_pXMLDoc->put_async(VARIANT_FALSE);	// 关闭异步调用
+	hr = m_pXMLDoc->put_async(VARIANT_FALSE);	// 鍏抽棴寮傛璋冪敤
 	if (FAILED(hr))
 		goto Ret0;
 
-	hr = m_pXMLDoc->put_resolveExternals(VARIANT_FALSE);	// 是否启用外部DTD分析
+	hr = m_pXMLDoc->put_resolveExternals(VARIANT_FALSE);	// 鏄惁鍚敤澶栭儴DTD鍒嗘瀽
 	if (FAILED(hr))
 		goto Ret0;
 
-	hr = m_pXMLDoc->put_validateOnParse(VARIANT_FALSE);		// 是否允许文档验证
+	hr = m_pXMLDoc->put_validateOnParse(VARIANT_FALSE);		// 鏄惁鍏佽鏂囨。楠岃瘉
 	if (FAILED(hr))
 		goto Ret0;
 
@@ -430,15 +430,15 @@ BOOL CXmlDocument::LoadXml(LPCTSTR pXml)
 	if (FAILED(hr))
 		return FALSE;
 
-	hr = m_pXMLDoc->put_async(VARIANT_FALSE);	// 关闭异步调用
+	hr = m_pXMLDoc->put_async(VARIANT_FALSE);	// 鍏抽棴寮傛璋冪敤
 	if (FAILED(hr))
 		goto Ret0;
 
-	hr = m_pXMLDoc->put_resolveExternals(VARIANT_FALSE);	// 是否启用外部DTD分析
+	hr = m_pXMLDoc->put_resolveExternals(VARIANT_FALSE);	// 鏄惁鍚敤澶栭儴DTD鍒嗘瀽
 	if (FAILED(hr))
 		goto Ret0;
 
-	hr = m_pXMLDoc->put_validateOnParse(VARIANT_FALSE);		// 是否允许文档验证
+	hr = m_pXMLDoc->put_validateOnParse(VARIANT_FALSE);		// 鏄惁鍏佽鏂囨。楠岃瘉
 	if (FAILED(hr))
 		goto Ret0;
 

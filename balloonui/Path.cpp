@@ -12,7 +12,7 @@ CPath::~CPath(void)
 {
 }
 
-// »ñÈ¡Ó¦ÓÃ³ÌĞòÖ´ĞĞÂ·¾¶
+// è·å–åº”ç”¨ç¨‹åºæ‰§è¡Œè·¯å¾„
 tstring CPath::GetAppPath()
 {
 	TCHAR szPath[MAX_PATH] = {0};
@@ -43,47 +43,50 @@ std::string CPath::GetAppPathAscii()
 	return strPath;
 }
 
-// »ñÈ¡Ó¦ÓÃ³ÌĞòµ±Ç°Ä¿Â¼
+// è·å–åº”ç”¨ç¨‹åºå½“å‰ç›®å½•
 tstring CPath::GetCurDir()
 {
 	TCHAR szCurDir[MAX_PATH] = {0};
 	::GetCurrentDirectory(MAX_PATH, szCurDir);
 
-	DWORD dwLen = _tcslen(szCurDir);
-	if (dwLen <= 0)
+	// _tcslen çš„è¿”å›ç±»å‹æ˜¯ size_tï¼Œç”¨ size_t æ‰¿æ¥å¯é¿å… 64 ä½ä¸‹æˆªæ–­åˆ° DWORDã€‚
+	// è¯¥å˜é‡åªåœ¨æœ¬å‡½æ•°å†…ç”¨äºå–æœ«å­—ç¬¦ï¼Œä¸æ¶‰åŠä»»ä½•è·¨æ–‡ä»¶çš„æ¥å£ã€‚
+	size_t nLen = _tcslen(szCurDir);
+	if (0 == nLen)
 		return _T("");
 
-	TCHAR cLastChar = szCurDir[dwLen - 1];
+	TCHAR cLastChar = szCurDir[nLen - 1];
 	if (cLastChar != _T('\\') && cLastChar != _T('/'))
 		_tcscat(szCurDir, _T("\\"));
 
 	return szCurDir;
 }
 
-// »ñÈ¡µ±Ç°ÏµÍ³µÄÁÙÊ±ÎÄ¼ş¼ĞµÄÂ·¾¶
+// è·å–å½“å‰ç³»ç»Ÿçš„ä¸´æ—¶æ–‡ä»¶å¤¹çš„è·¯å¾„
 tstring CPath::GetTempPath()
 {
 	TCHAR szTempPath[MAX_PATH] = {0};
 	::GetTempPath(MAX_PATH, szTempPath);
 
-	DWORD dwLen = _tcslen(szTempPath);
-	if (dwLen <= 0)
+	// åŒ GetCurDirï¼šç”¨ size_t æ‰¿æ¥ _tcslen çš„è¿”å›å€¼ï¼Œé¿å… 64 ä½ä¸‹æˆªæ–­åˆ° DWORDã€‚
+	size_t nLen = _tcslen(szTempPath);
+	if (0 == nLen)
 		return _T("");
 
-	TCHAR cLastChar = szTempPath[dwLen - 1];
+	TCHAR cLastChar = szTempPath[nLen - 1];
 	if (cLastChar != _T('\\') && cLastChar != _T('/'))
 		_tcscat(szTempPath, _T("\\"));
 
 	return szTempPath;
 }
 
-// »ñÈ¡µ±Ç°ÏµÍ³µÄÁÙÊ±ÎÄ¼ş¼ĞµÄÂ·¾¶ÏÂµÄÎ¨Ò»ÃüÃûµÄÁÙÊ±ÎÄ¼şÃû(È«Â·¾¶)
+// è·å–å½“å‰ç³»ç»Ÿçš„ä¸´æ—¶æ–‡ä»¶å¤¹çš„è·¯å¾„ä¸‹çš„å”¯ä¸€å‘½åçš„ä¸´æ—¶æ–‡ä»¶å(å…¨è·¯å¾„)
 tstring CPath::GetTempFileName(LPCTSTR lpszFileName)
 {
 	return GetRandomFileName(GetTempPath().c_str(), lpszFileName);
 }
 
-// »ñÈ¡Ëæ»úÎÄ¼şÃû(È«Â·¾¶)
+// è·å–éšæœºæ–‡ä»¶å(å…¨è·¯å¾„)
 tstring CPath::GetRandomFileName(LPCTSTR lpszPath, LPCTSTR lpszFileName)
 {
 	tstring strPath, strFileName, strExtFileName, strFullPath;
@@ -122,7 +125,7 @@ tstring CPath::GetRandomFileName(LPCTSTR lpszPath, LPCTSTR lpszFileName)
 	return _T("");
 }
 
-// ¼ì²âÖ¸¶¨Â·¾¶ÊÇ·ñÄ¿Â¼
+// æ£€æµ‹æŒ‡å®šè·¯å¾„æ˜¯å¦ç›®å½•
 BOOL CPath::IsDirectory(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -132,7 +135,7 @@ BOOL CPath::IsDirectory(LPCTSTR lpszPath)
 	return (((dwAttr != 0xFFFFFFFF) && (dwAttr & FILE_ATTRIBUTE_DIRECTORY)) ? TRUE : FALSE);
 }
 
-// ¼ì²âÖ¸¶¨ÎÄ¼şÊÇ·ñ´æÔÚ
+// æ£€æµ‹æŒ‡å®šæ–‡ä»¶æ˜¯å¦å­˜åœ¨
 BOOL CPath::IsFileExist(LPCTSTR lpszFileName)
 {
 	if (NULL == lpszFileName || NULL ==*lpszFileName)
@@ -142,7 +145,7 @@ BOOL CPath::IsFileExist(LPCTSTR lpszFileName)
 	return (((dwAttr != 0xFFFFFFFF) && (!(dwAttr & FILE_ATTRIBUTE_DIRECTORY))) ? TRUE : FALSE);
 }
 
-// ¼ì²âÖ¸¶¨Ä¿Â¼ÊÇ·ñ´æÔÚ
+// æ£€æµ‹æŒ‡å®šç›®å½•æ˜¯å¦å­˜åœ¨
 BOOL CPath::IsDirectoryExist(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -192,7 +195,7 @@ BOOL CPath::CreateDirectory(LPCTSTR lpPathName, LPSECURITY_ATTRIBUTES lpSecurity
 	return TRUE;
 }
 
-// »ñÈ¡Ö¸¶¨Â·¾¶µÄ¸ùÄ¿Â¼ĞÅÏ¢
+// è·å–æŒ‡å®šè·¯å¾„çš„æ ¹ç›®å½•ä¿¡æ¯
 tstring CPath::GetPathRoot(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -214,7 +217,7 @@ tstring CPath::GetPathRoot(LPCTSTR lpszPath)
 	return strPath;
 }
 
-// ·µ»ØÖ¸¶¨Â·¾¶×Ö·û´®µÄÄ¿Â¼ĞÅÏ¢
+// è¿”å›æŒ‡å®šè·¯å¾„å­—ç¬¦ä¸²çš„ç›®å½•ä¿¡æ¯
 tstring CPath::GetDirectoryName(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -230,7 +233,7 @@ tstring CPath::GetDirectoryName(LPCTSTR lpszPath)
 	return strPath;
 }
 
-// ·µ»ØÖ¸¶¨Â·¾¶×Ö·û´®µÄÎÄ¼şÃûºÍÀ©Õ¹Ãû
+// è¿”å›æŒ‡å®šè·¯å¾„å­—ç¬¦ä¸²çš„æ–‡ä»¶åå’Œæ‰©å±•å
 tstring CPath::GetFileName(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -246,7 +249,7 @@ tstring CPath::GetFileName(LPCTSTR lpszPath)
 	return strPath;
 }
 
-// ·µ»Ø²»¾ßÓĞÀ©Õ¹ÃûµÄÂ·¾¶×Ö·û´®µÄÎÄ¼şÃû
+// è¿”å›ä¸å…·æœ‰æ‰©å±•åçš„è·¯å¾„å­—ç¬¦ä¸²çš„æ–‡ä»¶å
 tstring CPath::GetFileNameWithoutExtension(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -263,14 +266,16 @@ tstring CPath::GetFileNameWithoutExtension(LPCTSTR lpszPath)
 		}
 	}
 
-	int nPos = strPath.rfind(_T('.'));
+	// rfind çš„è¿”å›ç±»å‹æ˜¯ tstring::size_typeï¼Œç”¨å®ƒæ‰¿æ¥æ‰èƒ½ä¸ npos ç›´æ¥æ¯”è¾ƒï¼›
+	// å†™æ³•ä¸ä¸‹é¢çš„ GetExtension ä¿æŒä¸€è‡´ã€‚
+	tstring::size_type nPos = strPath.rfind(_T('.'));
 	if (nPos != tstring::npos)
 		strPath = strPath.substr(0, nPos);
 
 	return strPath;
 }
 
-// ·µ»ØÖ¸¶¨µÄÂ·¾¶×Ö·û´®µÄÀ©Õ¹Ãû
+// è¿”å›æŒ‡å®šçš„è·¯å¾„å­—ç¬¦ä¸²çš„æ‰©å±•å
 tstring CPath::GetExtension(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -285,7 +290,7 @@ tstring CPath::GetExtension(LPCTSTR lpszPath)
 		return _T("");
 }
 
-// ¸ù¾İÖ¸¶¨µÄÏà¶ÔÂ·¾¶»ñÈ¡¾ø¶ÔÂ·¾¶
+// æ ¹æ®æŒ‡å®šçš„ç›¸å¯¹è·¯å¾„è·å–ç»å¯¹è·¯å¾„
 tstring CPath::GetFullPath(LPCTSTR lpszPath)
 {
 	if (NULL == lpszPath || NULL ==*lpszPath)
@@ -324,7 +329,7 @@ long CPath::GetFileSize(LPCTSTR lpszPath)
 	if(hFindFile == INVALID_HANDLE_VALUE)
 		return 0;
 	
-	//TODO: ²»¿¼ÂÇ´óÓÚ4GÒÔÉÏµÄÎÄ¼ş
+	//TODO: ä¸è€ƒè™‘å¤§äº4Gä»¥ä¸Šçš„æ–‡ä»¶
 	long nFileSize = (long)fd.nFileSizeLow;
 	::FindClose(hFindFile);
 

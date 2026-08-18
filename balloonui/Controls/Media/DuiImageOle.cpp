@@ -635,7 +635,10 @@ bool CDuiImageOle::InsertIntoRichEditOle(IRichEditOle* pRiche, HBITMAP hbm,
                  ::MulDiv(obj->GetDisplaySize().cy, 2540, 96) }
         : SIZEL{ 0, 0 };
     reo.sizel    = ext;
-    reo.dwUser   = dwUser;   // 应用自定义标记（聊天表情走这里存 faceId）
+    // 应用自定义标记（聊天表情走这里存 faceId）。REOBJECT.dwUser 由 Win32 定义为
+    // DWORD，即便 64 位下本方法的入参是 DWORD_PTR，能被 RichEdit 保存并读回的也
+    // 只有低 32 位，因此这里显式收窄，不会丢失实际可用的信息。
+    reo.dwUser   = static_cast<DWORD>(dwUser);
 
     HRESULT hr = pRiche->InsertObject(&reo);
 
